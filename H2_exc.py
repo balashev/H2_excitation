@@ -33,8 +33,63 @@ spcode = {'H': 'n_h', 'H2': 'n_h2',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
          }
 
+
+class plot(pg.PlotWidget):
+    def __init__(self, parent):
+        self.parent = parent
+        pg.PlotWidget.__init__(self, background=(29, 29, 29))
+        self.initstatus()
+        self.vb = self.getViewBox()
+
+    def initstatus(self):
+        self.s_status = False
+        self.selected_point = None
+
+    def set_data(self, data=None):
+        if data is None:
+            try:
+                self.vb.removeItem(self.d)
+            except:
+                pass
+        else:
+            self.data = data
+            self.points = pg.ScatterPlotItem(self.data[0], self.data[1], symbol='o', pen={'color': 0.8, 'width': 1}, brush=pg.mkBrush(100, 100, 200))
+            self.vb.addItem(self.points)
+
+    def mousePressEvent(self, event):
+        super(plot, self).mousePressEvent(event)
+        print('KEY PRESSED')
+        if event.button() == Qt.LeftButton:
+            if self.s_status:
+                self.mousePoint = self.vb.mapSceneToView(event.pos())
+                r = self.vb.viewRange()
+                self.ind = np.argmin(((self.mousePoint.x() - self.data[0]) / (r[0][1] - r[0][0]))**2   + ((self.mousePoint.y() - self.data[1]) / (r[1][1] - r[1][0]))**2)
+                if self.selected_point is not None:
+                    self.vb.removeItem(self.selected_point)
+                self.selected_point = pg.ScatterPlotItem(x=[self.data[0][self.ind]], y=[self.data[1][self.ind]], symbol='o', size=15,
+                                                        pen={'color': 0.8, 'width': 1}, brush=pg.mkBrush(230, 100, 10))
+                self.vb.addItem(self.selected_point)
+
+
+    def keyPressEvent(self, event):
+        super(plot, self).keyPressEvent(event)
+        key = event.key()
+
+        if not event.isAutoRepeat():
+            if event.key() == Qt.Key_S:
+                self.s_status = True
+
+    def keyReleaseEvent(self, event):
+        super(plot, self).keyReleaseEvent(event)
+        key = event.key()
+
+        if not event.isAutoRepeat():
+            if event.key() == Qt.Key_S:
+                self.s_status = False
+
+
 class model():
-    def __init__(self, folder='', name=None, filename=None, species=[]):
+    def __init__(self, folder='', name=None, filename=None, species=[], show_meta=False):
         self.folder = folder
         self.sp = {}
         self.species = species
@@ -44,14 +99,15 @@ class model():
                 name = filename.replace('.hdf5', '')
 
             self.name = name
-            self.read()
+            self.read(show_meta=show_meta)
 
-    def read(self, showMeta=False):
+    def read(self, show_meta=False, show_summary=True):
         """
         Read model data from hdf5 file
 
         :param
-            -  showMeta         : if True show Metadata table
+            -  show_meta           :  if True, show Metadata table
+            -  show_summary        :  if True, show summary
 
         :return: None
         """
@@ -68,7 +124,7 @@ class model():
 
         self.av = self.par('av')
         self.tgas = self.par('tgas')
-        self.Pgas = self.par('Pgas')
+        self.Pgas = self.par('pgas')
         self.n = self.par('ntot')
 
         self.readspecies()
@@ -77,10 +133,13 @@ class model():
             self.plot_phys_cond()
             self.plot_profiles()
 
-        if showMeta:
+        if show_meta:
             self.showMetadata()
 
         self.file.close()
+
+        if show_summary:
+            self.showSummary()
 
     def par(self, par=None):
         """
@@ -132,6 +191,12 @@ class model():
 
         self.species = species
 
+    def showSummary(self, pars=['z', 'P', 'uv']):
+        print('model: ' + self.name)
+        for p in pars:
+            print(p, ' : ', getattr(self, p))
+            #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
+
     def plot_phys_cond(self, pars=['tgas', 'n', 'av'], logx=True, ax=None, legend=True):
         """
         Plot the physical parameters in the model
@@ -166,9 +231,17 @@ class model():
             else:
                 axi = ax.twinx()
 
+            if p in ['tgas', 'n', 'av', 'Pgas']:
+                y = getattr(self, p)[mask]
+            else:
+                if 'N_' in p:
+                    y = np.log10(integrate.cumtrapz(self.sp[p.replace('N_', '')][mask], 10**x, initial=0))
+                else:
+                    y = self.sp[p][mask]
+
             color = plt.cm.tab10(i / 10)
             axi.set_ylabel(p, color=color)
-            line, = axi.plot(x, getattr(self, p)[mask], color=color, label=p)
+            line, = axi.plot(x, y, color=color, label=p)
             lines.append(line)
 
             if i > 0:
@@ -182,6 +255,7 @@ class model():
         if legend:
             ax.legend(handles=lines, loc='best')
 
+        return ax
 
     def plot_profiles(self, species=None, ax=None, legend=True, ls='-', lw=1):
         """
@@ -251,12 +325,14 @@ class model():
         else:
             self.mask = cols > -1
         #return np.searchsorted(cols, value)
+        #print('av_max:', self.av[self.mask][-1])
 
-    def lnL(self, species={}, syst=0):
+    def lnLike(self, species={}, syst=0):
         lnL = 0
+        self.showSummary()
         for k, v in species.items():
             v1 = v
-            v1 *= a(0, 0.1, 0.1, 'l')
+            v1 *= a(0, syst, syst, 'l')
             print(self.cols[k], v1.log(), v1.lnL(self.cols[k]))
             if v.type == 'm':
                 lnL += v1.lnL(self.cols[k])
@@ -278,21 +354,71 @@ class H2_exc():
 
         self.H2 = H2_summary.load_QSO()
 
-    def readmodel(self, filename=None):
+    def readmodel(self, filename=None, print_summary=False):
         """
         Read one model by filename
+        :param:
+            -  filename             :  filename contains the model
+            -  print_summary        :  if True, print summary for each model
         """
         if filename is not None:
             m = model(folder=self.folder, filename=filename, species=self.species)
             self.models[m.name] = m
             self.current = m.name
+            if print_summary:
+                m.showSummary()
 
     def readfolder(self):
         """
         Read list of models from the folder
         """
         for f in os.listdir(self.folder):
-            self.readmodel(f)
+            if f.endswith('.hdf5'):
+                self.readmodel(f)
+
+    def setgrid(self, pars=[], fixed={}, show=True):
+        """
+        Show and mask models for grid of specified parameters
+        :param:
+            -  pars           :  list of parameters in the grid, e.g. pars=['uv', 'P']
+            -  fixed          :  dict of parameters to be fixed, e.g. fixed={'z': 0.1}
+            -  show           :  if true show the plot for the grid
+        :return: mask
+            -  mask           :  list of names of the models in the grid
+        """
+        self.grid = {p: [] for p in pars}
+        self.mask = []
+
+        for name, model in self.models.items():
+            for k, v in fixed.items():
+                if getattr(model, k) != v:
+                    break
+            else:
+                for p in pars:
+                    self.grid[p].append(getattr(model, p))
+                self.mask.append(name)
+
+        print(self.grid)
+        if show and len(pars) == 2:
+            fig, ax = plt.subplots()
+            for v1, v2 in zip(self.grid[pars[0]], self.grid[pars[1]]):
+                ax.scatter(v1, v2, 100, c='orangered')
+            ax.set_xscale("log", nonposy='clip')
+            ax.set_yscale("log", nonposy='clip')
+            ax.set_xlabel(pars[0])
+            ax.set_ylabel(pars[1])
+
+        if show and len(pars) == 3:
+            from mpl_toolkits.mplot3d import Axes3D
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            for v1, v2, v3 in zip(self.grid[pars[0]], self.grid[pars[1]], self.grid[pars[2]]):
+                ax.scatter(v1, v2, v3, c='orangered')
+            ax.set_xlabel(pars[0])
+            ax.set_ylabel(pars[1])
+            ax.set_zlabel(pars[2])
+
+        return self.mask
 
     def comp(self, object):
         """
@@ -334,8 +460,8 @@ class H2_exc():
         for o in objects:
             q = self.comp(o)
             if species is None or len(species) == 0:
-                species = [s for s in q.e.keys() if 'H2j' in s]
-            j = np.sort([int(s[3:]) for s in species])
+                sp = [s for s in q.e.keys() if 'H2j' in s]
+            j = np.sort([int(s[3:]) for s in sp if 'v' not in s])
             x = [H2energy[0, i] for i in j]
             y = [q.e['H2j' + str(i)].col / stat[i] for i in j]
             typ = [q.e['H2j' + str(i)].col.type for i in j]
@@ -385,7 +511,7 @@ class H2_exc():
 
         return models
 
-    def compare(self, object='', models='current', syst='syst'):
+    def compare(self, object='', models='current', syst=0.0):
         """
         Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
         and also log of likelihood
@@ -406,7 +532,32 @@ class H2_exc():
             species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if 'H2j' in s])
             print(species)
             model.calc_cols(species.keys(), logN={'H2': q.e['H2'].col.val})
-            model.lnL(species, syst=syst)
+            model.lnLike(species, syst=syst)
+            print(model.lnL)
+
+
+    def comparegrid(self, object='0643', pars=[], fixed={}, syst=0.0):
+
+        self.setgrid(pars=pars, fixed=fixed, show=False)
+        self.compare('J0643', models=self.mask, syst=syst)
+        lnL = np.asarray([self.models[m].lnL for m in self.mask])
+        if len(pars) == 1:
+            x = np.asarray(self.grid[list(self.grid.keys())[0]])
+            inds = np.argsort(x)
+            print(x[inds], lnL[inds])
+            fig, ax = plt.subplots()
+            ax.scatter(x[inds], lnL[inds], 100, c='orangered')
+            self.plot = plot(self)
+            self.plot.set_data([x[inds], lnL[inds]])
+            self.plot.show()
+
+        if len(pars) == 2:
+            fig, ax = plt.subplots()
+            for v1, v2, l in zip(self.grid[pars[0]], self.grid[pars[1]], lnL):
+                print(v1, v2, l)
+                ax.scatter(v1, v2, 0)
+                ax.text(v1, v2, '{:.1f}'.format(l), size=20)
+
 
     def plot_models(self, ax=None, models='current'):
         """
@@ -435,9 +586,9 @@ class H2_exc():
 
     def best(self, object='', models='all', syst=0.0):
 
-        self.compare(object=object, models=models, syst=syst)
-
         models = self.listofmodels(models)
+
+        self.compare(object=object, models=[m.name for m in models], syst=syst)
 
         return models[np.argmax([m.lnL for m in models])].name
 
@@ -448,20 +599,27 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     H2 = H2_exc(folder='data/')
-    #H2.readmodel(filename='test_s_20.hdf5')
-    H2.readfolder()
-    #H2.compare(['J0643'])
-    H2.plot_objects(objects='0643', ax=ax)
-    name = H2.best(object='0643', syst=0.1)
-    print(H2.models[name].uv)
+    H2.plot_objects(objects=H2.H2.all())
     if 0:
-        H2.plot_models(ax=ax, models='all')
-    else:
-        H2.plot_models(ax=ax, models=name)
-
+        m = model(folder='data/', filename='h2uv_uv12_av1_0_z0_16_p1e4_s_21.hdf5', show_meta=False, species=['H', 'H2', 'H2j0', 'H2j1'])
+        m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
+    if 0:
+        H2.readfolder()
+        #H2.plot_objects(objects=['0643', '0843'], ax=ax)
+        if 0:
+            name = H2.best(object='0643', syst=0.1)
+            print(H2.models[name].lnL, H2.models[name].uv, H2.models[name].z, H2.models[name].P)
+        if 0:
+            H2.compare('J0643', models='all', syst=0.1)
+            H2.plot_models(ax=ax, models='all')
+        if 0:
+            H2.plot_models(ax=ax, models=name)
+        if 1:
+            H2.comparegrid('J0643', pars=['uv', 'P'], fixed={'z': 0.160}, syst=0.1)
     plt.tight_layout()
     plt.show()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
         QtGui.QApplication.instance().exec_()
+
 
 
