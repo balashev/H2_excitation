@@ -128,11 +128,7 @@ class model():
         self.h2 = self.par('cd_prof_h2')
         self.av = self.par('av')
         self.tgas = self.par('tgas')
-<<<<<<< HEAD
         self.pgas = self.par('pgas')
-=======
-        self.Pgas = self.par('pgas')
->>>>>>> 0bd7f0187e10a2609123c452e647bed89d9f6cfe
         self.n = self.par('ntot')
         self.nH = self.par('protdens')
         self.uv_flux = self.par('uv_flux')
@@ -203,17 +199,13 @@ class model():
 
         self.species = species
 
-<<<<<<< HEAD
-    def plot_phys_cond(self, pars=['tgas', 'n', 'av', 'pgas'], parx='x', logx=True, ax=None, legend=True):
-=======
     def showSummary(self, pars=['z', 'P', 'uv']):
         print('model: ' + self.name)
         for p in pars:
             print(p, ' : ', getattr(self, p))
             #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
 
-    def plot_phys_cond(self, pars=['tgas', 'n', 'av'], logx=True, ax=None, legend=True):
->>>>>>> 0bd7f0187e10a2609123c452e647bed89d9f6cfe
+    def plot_phys_cond(self, pars=['tgas', 'n', 'av'], logx=True, ax=None, legend=True, parx='x'):
         """
         Plot the physical parameters in the model
 
@@ -228,26 +220,22 @@ class model():
         """
 
         if parx == 'av':
-            mask = self.av > -1
-            x = self.av
             xlabel = 'Av'
         elif parx == 'x':
-            mask = self.x > -1
-            x = np.log10(self.x[mask])
             xlabel = 'log(Distance), cm'
         elif parx == 'h2':
-            mask = self.h2 > -1
-            x = np.log10(self.h2[mask])
-            xlabel = 'log(h2), cm-2'
+            xlabel = 'log(NH2), cm-2'
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(12, 6))
 
         if logx:
-            x = np.log10(x[mask])
+            mask = getattr(self, parx) > 0
+            x = np.log10(getattr(self, parx)[mask])
         else:
             mask = getattr(self, parx) > -1
-        #ax.set_xlim([x[0], x[-1]])
+            x = getattr(self, parx)[mask]
+        ax.set_xlim([x[0], x[-1]])
         ax.set_xlabel(xlabel)
 
         lines = []
@@ -267,12 +255,7 @@ class model():
 
             color = plt.cm.tab10(i / 10)
             axi.set_ylabel(p, color=color)
-<<<<<<< HEAD
-            line, = axi.plot(x, getattr(self, p)[mask], color=color, label=p)
-            #line, = axi.plot(x, getattr(self, p)[mask], label=p)
-=======
             line, = axi.plot(x, y, color=color, label=p)
->>>>>>> 0bd7f0187e10a2609123c452e647bed89d9f6cfe
             lines.append(line)
 
             if i > 0:
@@ -307,19 +290,24 @@ class model():
         if species is None:
             species = self.species
 
-        if parx=='av':
-            mask = self.av > -1
-            x = self.av
+        if parx == 'av':
             xlabel = 'Av'
-        elif parx=='x':
-            mask = self.x > -1
-            x = np.log10(self.x[mask])
+        elif parx == 'x':
             xlabel = 'log(Distance), cm'
-        elif parx=='h2':
-            mask = self.h2 > -1
-            x = np.log10(self.h2[mask])
-            xlabel = 'log(h2), cm-2'
+        elif parx == 'h2':
+            xlabel = 'log(NH2), cm-2'
 
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+        if logx:
+            mask = getattr(self, parx) > 0
+            x = np.log10(getattr(self, parx)[mask])
+        else:
+            mask = getattr(self, parx) > -1
+            x = getattr(self, parx)[mask]
+        ax.set_xlim([x[0], x[-1]])
+        ax.set_xlabel(xlabel)
 
 
         if ax is None:
@@ -329,9 +317,9 @@ class model():
 #            ax.plot(np.log10(self.x[1:]), np.log10(self.sp[s][1:]), '-', label=s, lw=lw)
         for s in species:
             if logy:
-                ax.plot(x[1:], np.log10(self.sp[s][1:]), ls=ls, label=s, lw=lw, linewidth=2.0)
+                ax.plot(x[mask], np.log10(self.sp[s][mask]), ls=ls, label=s, lw=lw, linewidth=2.0)
             else:
-                ax.plot(x[1:], self.sp[s][1:], ls=ls, label=s, lw=lw, linewidth=2.0)
+                ax.plot(x[mask], self.sp[s][mask], ls=ls, label=s, lw=lw, linewidth=2.0)
 
         if label:
             #ax.set_xlim([x[0], x[-1]])
@@ -427,18 +415,13 @@ class H2_exc():
             m = model(folder=self.folder, filename=filename, species=self.species)
             self.models[m.name] = m
             self.current = m.name
-<<<<<<< HEAD
             if 0:
                 if m.z < 0.16:
                     print(m.name, m.z)
                     self.red_hdf_file(filename=filename)
                     print(m.name, m.z)
-                else:
-                    print(m.name, m.z)
-=======
             if print_summary:
                 m.showSummary()
->>>>>>> 0bd7f0187e10a2609123c452e647bed89d9f6cfe
 
     def readfolder(self):
         """
@@ -759,31 +742,23 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     H2 = H2_exc(folder='data/')
-<<<<<<< HEAD
-    #H2.readmodel(filename='h2uv_06_murka_s_20.hdf5')
-    H2.readfolder()
-    #H2.compare(['J0643'])
-    #H2.compare_models(models='all')
-    #H2.plot_objects(objects='0528', ax=ax)
-    H2.plot_objects(objects='2123', ax=ax)
-    name = H2.best(object='2123', syst=0.1)
-    print(H2.models[name].uv)
     if 1:
-        H2.plot_models(ax=ax, models='all')
-        H2.compare_models(speciesname=['NH2'], models='all', physcondname=['tgas'], logy=True, parx='x') #physcondname=['tgas','n'],
-        H2.compare_models(speciesname=['NH2'],  models='all', logy=True, parx='av')
-        #H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
-        #H2.compare_models(speciesname=['NH2'], models='all', logy=True)
-        #H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
-        #H2.compare_models(speciesname=['H2'], models='all', logy=True, parx='x')
-    else:
-        H2.plot_models(ax=ax, models=name)
+        H2.readfolder()
+        H2.plot_objects(objects='2123', ax=ax)
+        name = H2.best(object='2123', syst=0.1)
+        print(H2.models[name].uv)
+        if 1:
+            H2.plot_models(ax=ax, models='all')
+            H2.compare_models(speciesname=['NH2'], models='all', physcondname=['tgas'], logy=True,
+                              parx='x')  # physcondname=['tgas','n'],
+            H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
+            # H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
+            # H2.compare_models(speciesname=['NH2'], models='all', logy=True)
+            # H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
+            # H2.compare_models(speciesname=['H2'], models='all', logy=True, parx='x')
+        else:
+            H2.plot_models(ax=ax, models=name)
 
-    plt.tight_layout()
-    plt.show()
-    if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
-        QtGui.QApplication.instance().exec_()
-=======
     H2.plot_objects(objects=H2.H2.all())
     if 0:
         m = model(folder='data/', filename='h2uv_uv12_av1_0_z0_16_p1e4_s_21.hdf5', show_meta=False, species=['H', 'H2', 'H2j0', 'H2j1'])
@@ -808,4 +783,3 @@ if __name__ == '__main__':
 
 
 
->>>>>>> 0bd7f0187e10a2609123c452e647bed89d9f6cfe
