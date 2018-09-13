@@ -118,6 +118,7 @@ class model():
         self.z = self.par('metal')
         self.P = self.par('gas_pressure_input')
         self.uv = self.par('radm_ini')
+        self.n0 = self.par('proton_density_input')
 
         # >>> profile of physical quntities
         self.x = self.par('distance')
@@ -599,11 +600,11 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     H2 = H2_exc(folder='data/')
-    H2.plot_objects(objects=H2.H2.all())
+    #H2.plot_objects(objects=H2.H2.all())
     if 0:
-        m = model(folder='data/', filename='h2uv_uv12_av1_0_z0_16_p1e4_s_21.hdf5', show_meta=False, species=['H', 'H2', 'H2j0', 'H2j1'])
+        m = model(folder='data/', filename='h2uv_uv12_av0_05_z0_16_n1e2_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1'])
         m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
-    if 0:
+    if 1:
         H2.readfolder()
         #H2.plot_objects(objects=['0643', '0843'], ax=ax)
         if 0:
@@ -615,7 +616,7 @@ if __name__ == '__main__':
         if 0:
             H2.plot_models(ax=ax, models=name)
         if 1:
-            H2.comparegrid('J0643', pars=['uv', 'P'], fixed={'z': 0.160}, syst=0.1)
+            H2.comparegrid('J0643', pars=['uv'], fixed={'z': 0.160, 'n0': 100}, syst=0.1)
     plt.tight_layout()
     plt.show()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
