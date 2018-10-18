@@ -8,7 +8,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 from scipy import integrate
 import sys
-sys.path.append('C:/science/python')
+sys.path.append('/home/toksovogo/science/codes/python')
 from spectro.a_unc import a
 from spectro.sviewer.utils import Timer
 
@@ -32,6 +32,9 @@ spcode = {'H': 'n_h', 'H2': 'n_h2',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
+          'NH2': 'cd_prof_h2',  'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1','NH2j2': 'cd_lev_prof_h2_v0_j2','NH2j3': 'cd_lev_prof_h2_v0_j3','NH2j4': 'cd_lev_prof_h2_v0_j4','NH2j5': 'cd_lev_prof_h2_v0_j5',
+          'H2_dest_rate': 'h2_dest_rate_ph', 'H2_form_rate_er': 'h2_form_rate_er','H2_form_rate_lh': 'h2_form_rate_lh','H2_photo_dest_prob': 'photo_prob___h2_photon_gives_h_h',
+          'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe'
          }
 
 class plot(pg.PlotWidget):
@@ -134,21 +137,25 @@ class model():
         self.z = self.par('metal')
         self.P = self.par('gas_pressure_input')
         self.uv = self.par('radm_ini')
-        self.n0 = self.par('proton_density_input')
 
         # >>> profile of physical quantities
         self.x = self.par('distance')
 
+        self.h2 = self.par('cd_prof_h2')
         self.av = self.par('av')
         self.tgas = self.par('tgas')
-        self.Pgas = self.par('pgas')
+        self.pgas = self.par('pgas')
         self.n = self.par('ntot')
+        self.nH = self.par('protdens')
+        self.uv_flux = self.par('uv_flux')
+        self.uv_dens = self.par('uv_dens')
+
 
         self.readspecies()
 
         if 0:
-            self.plot_phys_cond()
-            self.plot_profiles()
+            self.plot_phys_cond(pars=['tgas', 'n'], parx='av', logx=False)
+            #self.plot_profiles()
 
         if show_meta:
             self.showMetadata()
@@ -220,7 +227,7 @@ class model():
             print(p, ' : ', getattr(self, p))
             #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
 
-    def plot_phys_cond(self, pars=['tgas', 'n', 'av'], logx=True, ax=None, legend=True):
+    def plot_phys_cond(self, pars=['tgas', 'n', 'av'], logx=True, ax=None, legend=True, parx='x'):
         """
         Plot the physical parameters in the model
 
@@ -233,17 +240,23 @@ class model():
         :return: ax
             -  ax           :  axes object
         """
+
+        if parx == 'av':
+            xlabel = 'Av'
+        elif parx == 'x':
+            xlabel = 'log(Distance), cm'
+        elif parx == 'h2':
+            xlabel = 'log(NH2), cm-2'
+
         if ax is None:
             fig, ax = plt.subplots(figsize=(12, 6))
 
         if logx:
-            mask = self.x > 0
-            x = np.log10(self.x[mask])
-            xlabel = 'log(Distance), cm'
+            mask = getattr(self, parx) > 0
+            x = np.log10(getattr(self, parx)[mask])
         else:
-            mask = self.x > -1
-            x = self.x
-            xlabel = 'Distance, cm'
+            mask = getattr(self, parx) > -1
+            x = getattr(self, parx)[mask]
         ax.set_xlim([x[0], x[-1]])
         ax.set_xlabel(xlabel)
 
@@ -276,20 +289,23 @@ class model():
                 t.set_color(color)
 
         if legend:
+            #ax.legend()
             ax.legend(handles=lines, loc='best')
 
         return ax
 
-    def plot_profiles(self, species=None, ax=None, legend=True, ls='-', lw=1):
+    def plot_profiles(self, species=None, logx=False, logy=False, label=True, ax=None, legend=True, ls='-', lw=1, parx='av'):
         """
         Plot the profiles of the species
 
         :param:
-            -  species       :  ist of the species to plot
+            -  species       :  list of the species to plot
             -  ax            :  axis object to plot in, if None, then figure is created
             -  legend        :  show legend
             -  ls            :  linestyles
             -  lw            :  linewidth
+            -  logx          :  log of x axis
+            -  label         :  set label of x axis
 
         :return: ax
             -  ax            :  axis object
@@ -297,13 +313,45 @@ class model():
         if species is None:
             species = self.species
 
+        if parx == 'av':
+            xlabel = 'Av'
+        elif parx == 'x':
+            xlabel = 'log(Distance), cm'
+        elif parx == 'h2':
+            xlabel = 'log(NH2), cm-2'
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+        if logx:
+            mask = getattr(self, parx) > 0
+            x = np.log10(getattr(self, parx)[mask])
+        else:
+            mask = getattr(self, parx) > -1
+            x = getattr(self, parx)[mask]
+        ax.set_xlim([x[0], x[-1]])
+        ax.set_xlabel(xlabel)
+
+
         if ax is None:
             fig, ax = plt.subplots()
 
+#        for s in species:
+#            ax.plot(np.log10(self.x[1:]), np.log10(self.sp[s][1:]), '-', label=s, lw=lw)
         for s in species:
-            ax.plot(np.log10(self.x[1:]), np.log10(self.sp[s][1:]), '-', label=s, lw=lw)
+            if logy:
+                ax.plot(x[mask], np.log10(self.sp[s][mask]), ls=ls, label=s, lw=lw, linewidth=2.0)
+            else:
+                ax.plot(x[mask], self.sp[s][mask], ls=ls, label=s, lw=lw, linewidth=2.0)
+
+        if label:
+            #ax.set_xlim([x[0], x[-1]])
+            ax.set_xlabel(xlabel,fontsize=20)
+            ax.set_ylabel(species[0],fontsize=20)
+            ax.legend(loc='upper left')
 
         if legend:
+            #ax.legend(labels=[self.name])
             ax.legend()
 
         return ax
@@ -369,12 +417,14 @@ class H2_exc():
     def __init__(self, folder=''):
         self.folder = folder
         self.models = {}
-        self.species = ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7']
+        self.species = ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7',
+                        'NH2','NH2j5', 'NH2j4','NH2j3', 'NH2j2','NH2j1', 'NH2j0',
+                        'H2_dest_rate', 'H2_form_rate_er', 'H2_form_rate_lh', 'H2_photo_dest_prob']
         self.readH2database()
 
     def readH2database(self):
         import sys
-        sys.path.append('C:/science/python/')
+        sys.path.append('/home/toksovogo/science/codes/python/3.5/')
         import H2_summary
 
         self.H2 = H2_summary.load_QSO()
@@ -390,6 +440,7 @@ class H2_exc():
             m = model(folder=self.folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
+
             if show_summary:
                 m.showSummary()
 
@@ -620,12 +671,100 @@ class H2_exc():
 
             if len(mod) > 0:
                 color = plt.cm.tab10(ind/10)
-                ax.plot(x, mod, marker='', ls='--', lw=1, color=color, label=m.name, zorder=0)
+                ax.plot(x, mod, marker='', ls='--', lw=1, color=color, label=m.name, zorder=0, linewidth=2.0)
+                ax.legend()
 
         if legend:
             ax.legend(loc='best')
 
         return ax
+
+    def compare_models(self, speciesname=['H'], ax=None, models='current', physcondname=False, logy=False, parx='av'):
+        """
+        Plot comparison of certain quantities for specified models
+
+        :param:
+            -  ax                :  axes object, where to plot. If None, it will be created
+            -  models            :  names of the models to plot
+            -  speciesname       :  name of plotted from list ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7']
+
+        :return: ax
+            -  ax                :  axes object
+        """
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(12, 8))
+
+        if 1:
+            legend_m = []
+            for ind, m in enumerate(self.listofmodels(models)):
+                m.plot_profiles(species=speciesname, ax=ax, logy=logy,parx=parx)
+                legend_m.append(m.name[0:40])
+            ax.legend(labels=legend_m, fontsize=20)
+            ax.set_title(speciesname)
+
+        if physcondname:
+            fig2, ax2 = plt.subplots(figsize=(12, 8))
+            legend_m = []
+            for ind, m in enumerate(self.listofmodels(models)):
+                m.plot_phys_cond(pars=physcondname, logx=False, ax=ax2, parx=parx)
+                legend_m.append(m.name[0:40])
+            ax2.legend(labels=legend_m, fontsize=20)
+
+        if physcondname:
+            return ax, ax2
+        else:
+            return ax
+
+    def show_model(self, models='current',  ax=None, speciesname=['H'],  physcond_show=True, logy=False):
+        """
+        Plot excitation for specified models
+
+        :param:
+            -  ax                :  axes object, where to plot. If None, it will be created
+            -  models            :  names of the models to plot
+            -  speciesname       :  name of plotted from list ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7']
+
+        :return: ax
+            -  ax                :  axes object
+        """
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(12, 8))
+
+        if 1:
+            #legend_m = []
+            for ind, m in enumerate(self.listofmodels(models)):
+                for s in speciesname:
+                    m.plot_profiles(species=[s], ax=ax, logy=logy)
+
+            ax.set_title(m.name[0:30])
+
+        if physcond_show:
+            if 1:
+                fig2, ax2 = plt.subplots(figsize=(12, 8))
+                legend_m = []
+                for ind, m in enumerate(self.listofmodels(models)):
+                    m.plot_phys_cond(pars=['n', 'tgas'], parx='av', logx=False, ax=ax2)
+                    legend_m.append(m.name[8:19])
+                ax2.legend(fontsize=20)
+                ax2.set_title(m.name[0:30])
+
+        if physcond_show is False:
+            return ax
+        else:
+            return ax,  ax2
+
+    def red_hdf_file(self, filename=None):
+        self.file = h5py.File(self.folder + filename, 'r+')
+        meta = self.file['Metadata/Metadata']
+        ind = np.where(meta[:, 3] == 'metal'.encode())[0]
+        attr = meta[ind, 0][0].decode() + '/' + meta[ind, 1][0].decode()
+        data = self.file[attr]
+        d = data[0, int(meta[ind, 2][0].decode())]
+        data[0, int(meta[ind, 2][0].decode())] = d[0:3] + b'60' + d[5:]
+        self.file.close()
+
 
     def best(self, object='', models='all', syst=0.0):
 
@@ -642,11 +781,28 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     H2 = H2_exc(folder='data/')
-    #H2.plot_objects(objects=H2.H2.all())
-    if 0:
-        m = model(folder='data/', filename='h2uv_uv12_av0_05_z0_16_n1e2_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1'])
-        m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
     if 1:
+        H2.readfolder()
+        H2.plot_objects(objects='2123', ax=ax)
+        name = H2.best(object='2123', syst=0.1)
+        print(H2.models[name].uv)
+        if 1:
+            H2.plot_models(ax=ax, models='all')
+            H2.compare_models(speciesname=['NH2'], models='all', physcondname=['tgas'], logy=True,
+                              parx='x')  # physcondname=['tgas','n'],
+            H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
+            # H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
+            # H2.compare_models(speciesname=['NH2'], models='all', logy=True)
+            # H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
+            # H2.compare_models(speciesname=['H2'], models='all', logy=True, parx='x')
+        else:
+            H2.plot_models(ax=ax, models=name)
+
+    H2.plot_objects(objects=H2.H2.all())
+    if 0:
+        m = model(folder='data/', filename='h2uv_uv12_av1_0_z0_16_p1e4_s_21.hdf5', show_meta=False, species=['H', 'H2', 'H2j0', 'H2j1'])
+        m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
+    if 0:
         H2.readfolder()
         #H2.plot_objects(objects=['0643', '0843'], ax=ax)
         if 0:
@@ -662,9 +818,7 @@ if __name__ == '__main__':
             H2.comparegrid('B0528_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
             #H2.comparegrid('B0107_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
         if 1:
-            H2.setgrid(pars=['uv'], fixed={'z': 0.160, 'n0': 10})
-            print(H2.mask)
-            H2.plot_models(models=H2.mask, logN=17.83, legend=True)
+            H2.comparegrid('J0643', pars=['uv', 'P'], fixed={'z': 0.160}, syst=0.1)
     plt.tight_layout()
     plt.show()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
