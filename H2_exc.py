@@ -3,20 +3,22 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 from scipy import integrate
 import sys
 sys.path.append('C:/science/python')
 from spectro.a_unc import a
+from spectro.sviewer.utils import Timer
 
 def column(matrix, i):
     if i == 0 or (isinstance(i, str) and i[0] == 'v'):
-        return [row.val for row in matrix]
+        return np.asarray([row.val for row in matrix])
     if i == 1 or (isinstance(i, str) and i[0] == 'p'):
-        return [row.plus for row in matrix]
+        return np.asarray([row.plus for row in matrix])
     if i == 2 or (isinstance(i, str) and i[0] == 'm'):
-        return [row.minus for row in matrix]
+        return np.asarray([row.minus for row in matrix])
 
 H2_energy = np.genfromtxt('energy_X_H2.dat', dtype=[('nu', 'i2'), ('j', 'i2'), ('e', 'f8')],
                           unpack=True, skip_header=3, comments='#')
@@ -26,13 +28,11 @@ for e in H2_energy:
 
 stat = [(2 * i + 1) * ((i % 2) * 2 + 1) for i in range(12)]
 
-
 spcode = {'H': 'n_h', 'H2': 'n_h2',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
          }
-
 
 class plot(pg.PlotWidget):
     def __init__(self, parent):
@@ -89,19 +89,34 @@ class plot(pg.PlotWidget):
 
 
 class model():
-    def __init__(self, folder='', name=None, filename=None, species=[], show_meta=False):
+    def __init__(self, folder='', name=None, filename=None, species=[], show_summary=True, show_meta=False):
         self.folder = folder
         self.sp = {}
         self.species = species
         self.filename = filename
+        self.initpardict()
         if filename is not None:
             if name is None:
                 name = filename.replace('.hdf5', '')
-
             self.name = name
-            self.read(show_meta=show_meta)
+            self.read(show_summary=show_summary, show_meta=show_meta)
 
-    def read(self, show_meta=False, show_summary=True):
+    def initpardict(self):
+        self.pardict = {}
+        self.pardict['metal'] = ('Parameters/Parameters', 13, float)
+        self.pardict['radm_ini'] = ('Parameters/Parameters', 5, float)
+        self.pardict['proton_density_input'] = ('Parameters/Parameters', 3, float)
+        self.pardict['distance'] = ('Local quantities/Positions', 2, float)
+        self.pardict['av'] = ('Local quantities/Positions', 1, float)
+        self.pardict['tgas'] = ('Local quantities/Gas state', 2, float)
+        self.pardict['pgas'] = ('Local quantities/Gas state', 3, float)
+        self.pardict['ntot'] = ('Local quantities/Gas state', 1, float)
+        for n, ind in zip(['n_h', 'n_h2', 'n_c', 'n_cp', 'n_co'], [0, 2, 5, 93, 44]):
+            self.pardict[n] = ('Local quantities/Densities/Densities', ind, float)
+        for i in range(8):
+            self.pardict['pop_h2_v0_j'+str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 9+i, float)
+
+    def read(self, show_meta=False, show_summary=True, fast=True):
         """
         Read model data from hdf5 file
 
@@ -111,8 +126,9 @@ class model():
 
         :return: None
         """
-
         self.file = h5py.File(self.folder + self.filename, 'r')
+
+        self.fastread = fast
 
         # >>> model input parameters
         self.z = self.par('metal')
@@ -120,7 +136,7 @@ class model():
         self.uv = self.par('radm_ini')
         self.n0 = self.par('proton_density_input')
 
-        # >>> profile of physical quntities
+        # >>> profile of physical quantities
         self.x = self.par('distance')
 
         self.av = self.par('av')
@@ -154,15 +170,21 @@ class model():
         """
         meta = self.file['Metadata/Metadata']
         if par is not None:
-            ind = np.where(meta[:, 3] == par.encode())[0]
-            if len(ind) > 0:
-                attr = meta[ind, 0][0].decode() + '/' + meta[ind, 1][0].decode()
-                x = self.file[attr][:, int(meta[ind, 2][0].decode())]
-                if len(x) == 1:
+            if self.fastread and par in self.pardict:
+                attr, ind, typ = self.pardict[par]
+            else:
+                ind = np.where(meta[:, 3] == par.encode())[0]
+                if len(ind) > 0:
+                    attr = meta[ind, 0][0].decode() + '/' + meta[ind, 1][0].decode()
                     typ = {'string': str, 'real': float, 'integer': int}[meta[ind, 5][0].decode()]
-                    return typ(x[0].decode())
+                    ind = int(meta[ind, 2][0].decode())
                 else:
-                    return x
+                    return None
+        x = self.file[attr][:, ind]
+        if len(x) == 1:
+            return typ(x[0].decode())
+        else:
+            return x
 
     def showMetadata(self):
         """
@@ -192,7 +214,7 @@ class model():
 
         self.species = species
 
-    def showSummary(self, pars=['z', 'P', 'uv']):
+    def showSummary(self, pars=['z', 'P', 'n0', 'uv']):
         print('model: ' + self.name)
         for p in pars:
             print(p, ' : ', getattr(self, p))
@@ -328,13 +350,15 @@ class model():
         #return np.searchsorted(cols, value)
         #print('av_max:', self.av[self.mask][-1])
 
-    def lnLike(self, species={}, syst=0):
+    def lnLike(self, species={}, syst=0, verbose=False):
         lnL = 0
-        self.showSummary()
+        if verbose:
+            self.showSummary()
         for k, v in species.items():
             v1 = v
             v1 *= a(0, syst, syst, 'l')
-            print(self.cols[k], v1.log(), v1.lnL(self.cols[k]))
+            if verbose:
+                print(self.cols[k], v1.log(), v1.lnL(self.cols[k]))
             if v.type == 'm':
                 lnL += v1.lnL(self.cols[k])
 
@@ -355,7 +379,7 @@ class H2_exc():
 
         self.H2 = H2_summary.load_QSO()
 
-    def readmodel(self, filename=None, print_summary=False):
+    def readmodel(self, filename=None, show_summary=False):
         """
         Read one model by filename
         :param:
@@ -363,19 +387,19 @@ class H2_exc():
             -  print_summary        :  if True, print summary for each model
         """
         if filename is not None:
-            m = model(folder=self.folder, filename=filename, species=self.species)
+            m = model(folder=self.folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
-            if print_summary:
+            if show_summary:
                 m.showSummary()
 
-    def readfolder(self):
+    def readfolder(self, verbose=False):
         """
         Read list of models from the folder
         """
         for f in os.listdir(self.folder):
             if f.endswith('.hdf5'):
-                self.readmodel(f)
+                self.readmodel(f, show_summary=verbose)
 
     def setgrid(self, pars=[], fixed={}, show=True):
         """
@@ -439,6 +463,84 @@ class H2_exc():
 
         return q
 
+    def listofmodels(self, models=[]):
+        """
+        Return list of models
+
+        :param:
+            -  models         :  names of the models, can be list or string for individual model
+
+        :return: models
+            -  models         :  list of models
+
+        """
+        if isinstance(models, str):
+            if models == 'current':
+                models = [self.models[self.current]]
+            elif models == 'all':
+                models = list(self.models.values())
+            else:
+                models = [self.models[models]]
+        elif isinstance(models, list):
+            if len(models) == 0:
+                models = list(self.models.values())
+            else:
+                models = [self.models[m] for m in models]
+
+        return models
+
+    def compare(self, object='', models='current', syst=0.0):
+        """
+        Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
+        and also log of likelihood
+
+        :param:
+            -  object            :  object name
+            -  models            :  names of the models, can be list or string
+            -  syst              :  add systematic uncertainty to the calculation of the likelihood
+
+        :return: None
+            column densities are stored in the dictionary <cols> attribute for each model
+            log of likelihood value is stored in <lnL> attribute
+        """
+
+        q = self.comp(object)
+
+        for model in self.listofmodels(models):
+            #print(model)
+            species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if 'H2j' in s])
+            model.calc_cols(species.keys(), logN={'H2': q.e['H2'].col.val})
+            model.lnLike(species, syst=syst)
+
+    def comparegrid(self, object='0643', pars=[], fixed={}, syst=0.0, plot=True, show_best=True):
+
+        self.setgrid(pars=pars, fixed=fixed, show=False)
+        self.compare(object, models=self.mask, syst=syst)
+        self.grid['lnL'] = np.asarray([self.models[m].lnL for m in self.mask])
+
+        if plot:
+            if len(pars) == 1:
+                x = np.asarray(self.grid[list(self.grid.keys())[0]])
+                inds = np.argsort(x)
+                print(x[inds], self.grid['lnL'][inds])
+                fig, ax = plt.subplots()
+                ax.scatter(x[inds], self.grid['lnL'][inds], 100, c='orangered')
+                self.plot = plot(self)
+                self.plot.set_data([x[inds], self.grid['lnL'][inds]])
+                self.plot.show()
+
+            if len(pars) == 2:
+                fig, ax = plt.subplots()
+                for v1, v2, l in zip(self.grid[pars[0]], self.grid[pars[1]], self.grid['lnL']):
+                    print(v1, v2, l)
+                    ax.scatter(v1, v2, 0)
+                    ax.text(v1, v2, '{:.1f}'.format(l), size=20)
+
+            if show_best:
+                imax = np.argmax(lnL)
+                ax = self.plot_objects(objects=object)
+                self.plot_models(ax=ax, models=self.mask[imax])
+
     def plot_objects(self, objects=[], species=[], ax=None, plotstyle='scatter', legend=False):
         """
         Plot object from the data
@@ -486,93 +588,30 @@ class H2_exc():
 
         return ax
 
-    def listofmodels(self, models=[]):
-        """
-        Return list of models
-
-        :param:
-            -  models         :  names of the models, can be list or string for individual model
-
-        :return: models
-            -  models         :  list of models
-
-        """
-        if isinstance(models, str):
-            if models == 'current':
-                models = [self.models[self.current]]
-            elif models == 'all':
-                models = list(self.models.values())
-            else:
-                models = [self.models[models]]
-        elif isinstance(models, list):
-            if len(models) == 0:
-                models = list(self.models.values())
-            else:
-                models = [self.models[m] for m in models]
-
-        return models
-
-    def compare(self, object='', models='current', syst=0.0):
-        """
-        Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
-        and also log of likelihood
-
-        :param:
-            -  object            :  object name
-            -  models            :  names of the models, can be list or string
-            -  syst              :  add systematic uncertainty to the calculation of the likelihood
-
-        :return: None
-            column densities are stored in the dictionary <cols> attribute for each model
-            log of likelihood value is stored in <lnL> attribute
-        """
-
-        q = self.comp(object)
-
-        for model in self.listofmodels(models):
-            species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if 'H2j' in s])
-            print(species)
-            model.calc_cols(species.keys(), logN={'H2': q.e['H2'].col.val})
-            model.lnLike(species, syst=syst)
-            print(model.lnL)
-
-
-    def comparegrid(self, object='0643', pars=[], fixed={}, syst=0.0):
-
-        self.setgrid(pars=pars, fixed=fixed, show=False)
-        self.compare('J0643', models=self.mask, syst=syst)
-        lnL = np.asarray([self.models[m].lnL for m in self.mask])
-        if len(pars) == 1:
-            x = np.asarray(self.grid[list(self.grid.keys())[0]])
-            inds = np.argsort(x)
-            print(x[inds], lnL[inds])
-            fig, ax = plt.subplots()
-            ax.scatter(x[inds], lnL[inds], 100, c='orangered')
-            self.plot = plot(self)
-            self.plot.set_data([x[inds], lnL[inds]])
-            self.plot.show()
-
-        if len(pars) == 2:
-            fig, ax = plt.subplots()
-            for v1, v2, l in zip(self.grid[pars[0]], self.grid[pars[1]], lnL):
-                print(v1, v2, l)
-                ax.scatter(v1, v2, 0)
-                ax.text(v1, v2, '{:.1f}'.format(l), size=20)
-
-
-    def plot_models(self, ax=None, models='current'):
+    def plot_models(self, ax=None, models='current', logN=None, species='<7', legend=False):
         """
         Plot excitation for specified models
 
         :param:
             -  ax                :  axes object, where to plot. If None, it will be created
             -  models            :  names of the models to plot
+            -  logN              :  total H2 column density
+            -  species           :  list of rotational levels to plot, can be string as '<N', where N is the number of limited rotational level
+            -  legend            :  if True, then plot legend
 
         :return: ax
             -  ax                :  axes object
         """
         if ax is None:
             fig, ax = plt.subplots(figsize=(12, 8))
+
+        if isinstance(species, str):
+            species = ['H2j' + str(i) for i in range(int(species[1:]))]
+
+        if logN is not None:
+            for m in self.listofmodels(models):
+                print(m)
+                m.calc_cols(species, logN={'H2': logN})
 
         for ind, m in enumerate(self.listofmodels(models)):
             j = np.sort([int(s[3:]) for s in m.cols.keys()])
@@ -582,6 +621,9 @@ class H2_exc():
             if len(mod) > 0:
                 color = plt.cm.tab10(ind/10)
                 ax.plot(x, mod, marker='', ls='--', lw=1, color=color, label=m.name, zorder=0)
+
+        if legend:
+            ax.legend(loc='best')
 
         return ax
 
@@ -615,8 +657,14 @@ if __name__ == '__main__':
             H2.plot_models(ax=ax, models='all')
         if 0:
             H2.plot_models(ax=ax, models=name)
+        if 0:
+            #H2.setgrid(pars=['uv', 'n0'], fixed={'z': 0.160})
+            H2.comparegrid('B0528_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
+            #H2.comparegrid('B0107_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
         if 1:
-            H2.comparegrid('J0643', pars=['uv'], fixed={'z': 0.160, 'n0': 100}, syst=0.1)
+            H2.setgrid(pars=['uv'], fixed={'z': 0.160, 'n0': 10})
+            print(H2.mask)
+            H2.plot_models(models=H2.mask, logN=17.83, legend=True)
     plt.tight_layout()
     plt.show()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
