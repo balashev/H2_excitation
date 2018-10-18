@@ -71,7 +71,7 @@ class image():
 class plotExc(pg.PlotWidget):
     def __init__(self, parent):
         self.parent = parent
-        pg.PlotWidget.__init__(self, background=(29, 29, 29))
+        pg.PlotWidget.__init__(self, background=(29, 29, 29), labels={'left': 'log(N/g)', 'bottom': 'Energy, cm-1'})
         self.initstatus()
         self.vb = self.getViewBox()
         self.view = {}
@@ -386,7 +386,7 @@ class H2viewer(QMainWindow):
         #self.splitter_plot.setSizes([1000, 1000])
         self.splitter.addWidget(self.splitter_plot)
         self.splitter.addWidget(self.H2_systems)
-        self.splitter.setSizes([1500, 400])
+        self.splitter.setSizes([1500, 250])
 
         self.setCentralWidget(self.splitter)
 

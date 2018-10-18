@@ -9,6 +9,7 @@ from pyqtgraph.Qt import QtCore, QtGui
 from scipy import integrate
 import sys
 sys.path.append('/home/toksovogo/science/codes/python')
+sys.path.append('/science/python')
 from spectro.a_unc import a
 from spectro.sviewer.utils import Timer
 
