@@ -135,8 +135,9 @@ class model():
         self.fastread = fast
 
         # >>> model input parameters
-        self.z = self.par('metal')
+        self.me = self.par('metal')
         self.P = self.par('gas_pressure_input')
+        self.n0 = self.par('proton_density_input')
         self.uv = self.par('radm_ini')
 
         # >>> profile of physical quantities
@@ -150,7 +151,6 @@ class model():
         self.nH = self.par('protdens')
         self.uv_flux = self.par('uv_flux')
         self.uv_dens = self.par('uv_dens')
-
 
         self.readspecies()
 
@@ -222,7 +222,7 @@ class model():
 
         self.species = species
 
-    def showSummary(self, pars=['z', 'P', 'n0', 'uv']):
+    def showSummary(self, pars=['z', 'P', 'uv']):
         print('model: ' + self.name)
         for p in pars:
             print(p, ' : ', getattr(self, p))
@@ -475,7 +475,7 @@ class H2_exc():
                     self.grid[p].append(getattr(model, p))
                 self.mask.append(name)
 
-        print(self.grid)
+        #print(self.grid)
         if show and len(pars) == 2:
             fig, ax = plt.subplots()
             for v1, v2 in zip(self.grid[pars[0]], self.grid[pars[1]]):
@@ -574,7 +574,6 @@ class H2_exc():
             if len(pars) == 1:
                 x = np.asarray(self.grid[list(self.grid.keys())[0]])
                 inds = np.argsort(x)
-                print(x[inds], self.grid['lnL'][inds])
                 fig, ax = plt.subplots()
                 ax.scatter(x[inds], self.grid['lnL'][inds], 100, c='orangered')
                 self.plot = plot(self)
@@ -584,7 +583,6 @@ class H2_exc():
             if len(pars) == 2:
                 fig, ax = plt.subplots()
                 for v1, v2, l in zip(self.grid[pars[0]], self.grid[pars[1]], self.grid['lnL']):
-                    print(v1, v2, l)
                     ax.scatter(v1, v2, 0)
                     ax.text(v1, v2, '{:.1f}'.format(l), size=20)
 
@@ -782,7 +780,7 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     H2 = H2_exc(folder='data/')
-    if 1:
+    if 0:
         H2.readfolder()
         H2.plot_objects(objects='2123', ax=ax)
         name = H2.best(object='2123', syst=0.1)
@@ -800,8 +798,8 @@ if __name__ == '__main__':
             H2.plot_models(ax=ax, models=name)
 
     H2.plot_objects(objects=H2.H2.all())
-    if 0:
-        m = model(folder='data/', filename='h2uv_uv12_av1_0_z0_16_p1e4_s_21.hdf5', show_meta=False, species=['H', 'H2', 'H2j0', 'H2j1'])
+    if 1:
+        m = model(folder='data/', filename='h2uv_uv12_av0_05_z0_16_n3e1_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1'])
         m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
     if 0:
         H2.readfolder()
@@ -816,10 +814,10 @@ if __name__ == '__main__':
             H2.plot_models(ax=ax, models=name)
         if 0:
             #H2.setgrid(pars=['uv', 'n0'], fixed={'z': 0.160})
-            H2.comparegrid('B0528_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
+            H2.comparegrid('B0528_1', pars=['uv', 'n0'], fixed={'me': 0.160}, syst=0.1)
             #H2.comparegrid('B0107_1', pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.1)
         if 1:
-            H2.comparegrid('J0643', pars=['uv', 'P'], fixed={'z': 0.160}, syst=0.1)
+            H2.comparegrid('J0643', pars=['uv', 'P'], fixed={'me': 0.160}, syst=0.1)
     plt.tight_layout()
     plt.show()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):

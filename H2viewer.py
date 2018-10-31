@@ -2,8 +2,9 @@ from functools import partial
 from matplotlib import cm
 from PyQt5.QtCore import (Qt, )
 from PyQt5.QtGui import (QFont)
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, QWidget,
-                             QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox)
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, QWidget, QLabel,
+                             QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox,
+                             QRadioButton, QButtonGroup, QComboBox)
 import pyqtgraph as pg
 
 from H2_exc import *
@@ -218,7 +219,7 @@ class plotGrid(pg.PlotWidget):
                 ind = np.argmin((b - self.data['b'][self.ind])**2 + (N - self.data['N'][self.ind])**2)
                 #ind = np.where(np.logical_and(b == self.data['b'][self.ind], N == self.data['N'][self.ind]))[0][0]
                 #ind = np.where(np.logical_and(self.parent.data['b'] == self.data['b'][self.ind], self.parent.data['N'] == self.data['N'][self.ind]))[0][0]
-                self.parent.setCurrentCell(0,0)
+                self.parent.setCurrentCell(0, 0)
                 self.parent.row_clicked(ind)
 
     def keyPressEvent(self, event):
@@ -267,15 +268,21 @@ class QSOlistTable(pg.TableWidget):
         self.setSortingEnabled(False)
 
     def compare(self):
+        grid = self.parent.parent.grid_pars.pars
+        pars = [list(grid.keys())[list(grid.values()).index('x')],
+                list(grid.keys())[list(grid.values()).index('y')]]
+        fixed = list(grid.keys())[list(grid.values()).index('fixed')]
+        fixed = {fixed: float(getattr(self.parent.parent.grid_pars, fixed + '_val').currentText())}
         for idx in self.selectedIndexes():
             # self.parent.normview = False
             name = self.cell_value('name')
-            self.parent.parent.H2.comparegrid(name, pars=['uv', 'n0'], fixed={'z': 0.160}, syst=0.2, plot=False)
+            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=0.2, plot=False)
             grid = self.parent.parent.H2.grid
-            self.parent.parent.plot_reg.set_data(x=grid['uv'], y=grid['n0'], z=grid['lnL'])
-            self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
-            self.scale = [(self.x[-1] - self.x[0]) / (self.x.shape[0] - 1),
-                          (self.y[-1] - self.y[0]) / (self.y.shape[0] - 1)]
+            #print('grid', grid['uv'], grid['n0'], grid['lnL'])
+            self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
+            self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
+            #self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
+            #self.scale = [(self.x[-1] - self.x[0]) / (self.x.shape[0] - 1), (self.y[-1] - self.y[0]) / (self.y.shape[0] - 1)]
 
     def columnIndex(self, columnname):
         return [self.horizontalHeaderItem(x).text() for x in range(self.columnCount())].index(columnname)
@@ -356,6 +363,53 @@ class chooseH2SystemWidget(QWidget):
         self.close()
 
 
+class gridParsWidget(QWidget):
+    """
+    Widget for choose fitting parameters during the fit.
+    """
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        #self.resize(700, 900)
+        #self.move(400, 100)
+        self.pars = {'uv': 'x', 'n0': 'y', 'me': 'fixed'}
+        self.parent.H2.setgrid(pars=list(self.pars.keys()))
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel('grid parameters:'))
+
+        for n in self.pars.keys():
+            l = QHBoxLayout(self)
+            l.addWidget(QLabel((n + ': ')[:3]))
+            self.group = QButtonGroup(self)
+            for b in ('x', 'y', 'z', 'fixed'):
+                setattr(self, b, QCheckBox(b, checkable=True))
+                getattr(self, b).clicked[bool].connect(partial(self.setGridView, par=n, b=b))
+                l.addWidget(getattr(self, b))
+                self.group.addButton(getattr(self, b))
+            getattr(self, self.pars[n]).setChecked(True)
+            setattr(self, n + '_val', QComboBox(self))
+            getattr(self, n + '_val').setFixedSize(80,30)
+            getattr(self, n + '_val').addItems(np.append([''], np.asarray(np.sort(np.unique(self.parent.H2.grid[n])), dtype=str)))
+            if self.pars[n] is 'fixed':
+                getattr(self, n + '_val').setCurrentIndex(1)
+            l.addWidget(getattr(self, n + '_val'))
+            l.addStretch(1)
+            layout.addLayout(l)
+
+        layout.addStretch(1)
+
+        self.setLayout(layout)
+
+        self.setStyleSheet(open('styles.ini').read())
+
+    def setGridView(self, par, b):
+        self.pars[par] = b
+        if b is 'fixed':
+            print(getattr(self, par + '_val').text())
+            self.pars[par] = getattr(self, par + '_val').currentText()
+        print(self.pars)
+
 class H2viewer(QMainWindow):
 
     def __init__(self):
@@ -377,15 +431,19 @@ class H2viewer(QMainWindow):
         self.plot_exc = plotExc(self)
         self.plot_reg = plotGrid(self)
         self.H2_systems = chooseH2SystemWidget(self, closebutton=False)
+        self.grid_pars = gridParsWidget(self)
         # self.plot.setFrameShape(QFrame.StyledPanel)
 
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter_plot = QSplitter(Qt.Vertical)
         self.splitter_plot.addWidget(self.plot_exc)
         self.splitter_plot.addWidget(self.plot_reg)
-        #self.splitter_plot.setSizes([1000, 1000])
         self.splitter.addWidget(self.splitter_plot)
-        self.splitter.addWidget(self.H2_systems)
+        self.splitter_pars = QSplitter(Qt.Vertical)
+        self.splitter_pars.addWidget(self.H2_systems)
+        self.splitter_pars.addWidget(self.grid_pars)
+        self.splitter_pars.setSizes([1000, 150])
+        self.splitter.addWidget(self.splitter_pars)
         self.splitter.setSizes([1500, 250])
 
         self.setCentralWidget(self.splitter)
