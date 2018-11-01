@@ -397,6 +397,14 @@ class gridParsWidget(QWidget):
             l.addStretch(1)
             layout.addLayout(l)
 
+        l = QHBoxLayout(self)
+        self.compare = QPushButton('Compare')
+        self.compare.clicked[bool].connect(self.parent.H2_systems.table.compare)
+        self.compare.setFixedSize(90, 30)
+        l.addWidget(self.compare)
+        l.addStretch(1)
+        layout.addLayout(l)
+
         layout.addStretch(1)
 
         self.setLayout(layout)
@@ -414,8 +422,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
-        self.H2 = H2_exc(folder='data/')
+        self.H2 = H2_exc(folder='data_rough')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()

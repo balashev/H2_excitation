@@ -32,8 +32,10 @@ stat = [(2 * i + 1) * ((i % 2) * 2 + 1) for i in range(12)]
 spcode = {'H': 'n_h', 'H2': 'n_h2',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
+          'H2j8': 'pop_h2_v0_j8', 'H2j9': 'pop_h2_v0_j9', 'H2j10': 'pop_h2_v0_j10',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
           'NH2': 'cd_prof_h2',  'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1','NH2j2': 'cd_lev_prof_h2_v0_j2','NH2j3': 'cd_lev_prof_h2_v0_j3','NH2j4': 'cd_lev_prof_h2_v0_j4','NH2j5': 'cd_lev_prof_h2_v0_j5',
+          'NH2j6': 'cd_lev_prof_h2_v0_j6', 'NH2j7': 'cd_lev_prof_h2_v0_j7','NH2j8': 'cd_lev_prof_h2_v0_j8','NH2j9': 'cd_lev_prof_h2_v0_j9','NH2j10': 'cd_lev_prof_h2_v0_j10','NH2j11': 'cd_lev_prof_h2_v0_j11',
           'H2_dest_rate': 'h2_dest_rate_ph', 'H2_form_rate_er': 'h2_form_rate_er','H2_form_rate_lh': 'h2_form_rate_lh','H2_photo_dest_prob': 'photo_prob___h2_photon_gives_h_h',
           'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe'
          }
@@ -117,7 +119,7 @@ class model():
         self.pardict['ntot'] = ('Local quantities/Gas state', 1, float)
         for n, ind in zip(['n_h', 'n_h2', 'n_c', 'n_cp', 'n_co'], [0, 2, 5, 93, 44]):
             self.pardict[n] = ('Local quantities/Densities/Densities', ind, float)
-        for i in range(8):
+        for i in range(11):
             self.pardict['pop_h2_v0_j'+str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 9+i, float)
 
     def read(self, show_meta=False, show_summary=True, fast=True):
@@ -416,10 +418,10 @@ class model():
 
 class H2_exc():
     def __init__(self, folder=''):
-        self.folder = folder
+        self.folder = folder if folder.endswith('/') else folder + '/'
         self.models = {}
-        self.species = ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7',
-                        'NH2','NH2j5', 'NH2j4','NH2j3', 'NH2j2','NH2j1', 'NH2j0',
+        self.species = ['H', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9', 'H2j10',
+                        'NH2', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NH2j6', 'NH2j7', 'NH2j8', 'NH2j9', 'NH2j10',
                         'H2_dest_rate', 'H2_form_rate_er', 'H2_form_rate_lh', 'H2_photo_dest_prob']
         self.readH2database()
 
@@ -430,15 +432,17 @@ class H2_exc():
 
         self.H2 = H2_summary.load_QSO()
 
-    def readmodel(self, filename=None, show_summary=False):
+    def readmodel(self, filename=None, show_summary=False, folder=None):
         """
         Read one model by filename
         :param:
             -  filename             :  filename contains the model
             -  print_summary        :  if True, print summary for each model
         """
+        if folder == None:
+            folder = self.folder
         if filename is not None:
-            m = model(folder=self.folder, filename=filename, species=self.species, show_summary=False)
+            m = model(folder=folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
 
@@ -449,9 +453,16 @@ class H2_exc():
         """
         Read list of models from the folder
         """
-        for f in os.listdir(self.folder):
-            if f.endswith('.hdf5'):
-                self.readmodel(f, show_summary=verbose)
+        if 1:
+            for (dirpath, dirname, filenames) in os.walk(self.folder):
+                for f in filenames:
+                    if f.endswith('.hdf5'):
+                        self.readmodel(filename=f, folder=dirpath + '/')
+        else:
+            for f in os.listdir(self.folder):
+                if f.endswith('.hdf5'):
+                    self.readmodel(f, show_summary=verbose)
+
 
     def setgrid(self, pars=[], fixed={}, show=True):
         """
