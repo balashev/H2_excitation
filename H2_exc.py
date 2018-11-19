@@ -455,6 +455,7 @@ class H2_exc():
         """
         if 1:
             for (dirpath, dirname, filenames) in os.walk(self.folder):
+                print(dirpath, dirname, filenames)
                 for f in filenames:
                     if f.endswith('.hdf5'):
                         self.readmodel(filename=f, folder=dirpath + '/')
@@ -571,7 +572,7 @@ class H2_exc():
 
         for model in self.listofmodels(models):
             #print(model)
-            species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if 'H2j' in s])
+            species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if ('H2j' in s) and ('v' not in s)])
             model.calc_cols(species.keys(), logN={'H2': q.e['H2'].col.val})
             model.lnLike(species, syst=syst)
 
