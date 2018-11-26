@@ -1,13 +1,17 @@
 from functools import partial
 from matplotlib import cm
+import matplotlib.pyplot as plt
 from PyQt5.QtCore import (Qt, )
-from PyQt5.QtGui import (QFont)
+from PyQt5.QtGui import (QFont, )
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, QWidget, QLabel,
                              QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox,
-                             QRadioButton, QButtonGroup, QComboBox)
+                             QRadioButton, QButtonGroup, QComboBox, QTableView)
 import pyqtgraph as pg
 
+import sys
+sys.path.append('C:/science/python')
 from H2_exc import *
+from spectro.stats import distr2d
 
 class image():
     """
@@ -276,7 +280,7 @@ class QSOlistTable(pg.TableWidget):
         for idx in self.selectedIndexes():
             # self.parent.normview = False
             name = self.cell_value('name')
-            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=0.2, plot=False)
+            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=0.5, plot=False)
             grid = self.parent.parent.H2.grid
             #print('grid', grid['uv'], grid['n0'], grid['lnL'])
             self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
@@ -313,15 +317,15 @@ class chooseH2SystemWidget(QWidget):
         self.table = QSOlistTable(self)
         data = self.parent.H2.H2.makelist(pars=['z_dla', 'Me__val', 'H2__val'], sys=self.parent.H2.H2.all(), view='numpy')
         #data = self.H2.H2.list(pars=['name', 'H2', 'metallicity'])
-        print(data)
         self.table.setdata(data)
+        self.table.setSelectionBehavior(QTableView.SelectRows);
         self.buttons = {}
         for i, d in enumerate(data):
             wdg = QWidget()
             l = QVBoxLayout()
             l.addSpacing(3)
             button = QPushButton(d[0], self, checkable=True)
-            button.setFixedSize(100, 20)
+            button.setFixedSize(100, 30)
             button.setChecked(False)
             button.clicked[bool].connect(partial(self.click, d[0]))
             self.buttons[d[0]] = button
@@ -351,6 +355,7 @@ class chooseH2SystemWidget(QWidget):
 
     def click(self, name):
         self.parent.plot_exc.add(name, self.buttons[name].isChecked())
+        self.table.setCurrentCell(np.where(self.table.data['name'] == name)[0][0], 0)
 
     def ok(self):
         self.hide()
@@ -389,7 +394,7 @@ class gridParsWidget(QWidget):
                 self.group.addButton(getattr(self, b))
             getattr(self, self.pars[n]).setChecked(True)
             setattr(self, n + '_val', QComboBox(self))
-            getattr(self, n + '_val').setFixedSize(80,30)
+            getattr(self, n + '_val').setFixedSize(80, 25)
             getattr(self, n + '_val').addItems(np.append([''], np.asarray(np.sort(np.unique(self.parent.H2.grid[n])), dtype=str)))
             if self.pars[n] is 'fixed':
                 getattr(self, n + '_val').setCurrentIndex(1)
@@ -403,6 +408,12 @@ class gridParsWidget(QWidget):
         self.compare.setFixedSize(90, 30)
         l.addWidget(self.compare)
         l.addStretch(1)
+        self.export = QPushButton('Export')
+        self.export.clicked[bool].connect(self.exportIt)
+        self.export.setFixedSize(90, 30)
+        l.addWidget(self.export)
+        l.addStretch(1)
+
         layout.addLayout(l)
 
         layout.addStretch(1)
@@ -410,6 +421,16 @@ class gridParsWidget(QWidget):
         self.setLayout(layout)
 
         self.setStyleSheet(open('styles.ini').read())
+
+    def exportIt(self):
+        grid = self.parent.H2.grid
+        print(grid)
+        d = distr2d(x=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]),
+                    y=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]]),
+                    z=np.exp(grid['lnL']))
+        d.plot_contour(color=None)
+        plt.show()
+
 
     def setGridView(self, par, b):
         self.pars[par] = b
@@ -422,7 +443,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data_rough')
+        self.H2 = H2_exc(folder='data_01')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
