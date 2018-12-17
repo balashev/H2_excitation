@@ -376,7 +376,7 @@ class model():
             logN[list(logN.keys())[0]] -= np.log10(sides)
             self.set_mask(logN=logN)
 
-        cols = {}
+        cols = OrderedDict()
         for s in species:
             cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask]) * sides)
 
@@ -480,7 +480,7 @@ class H2_exc():
 
         for name, model in self.models.items():
             for k, v in fixed.items():
-                if getattr(model, k) != v:
+                if getattr(model, k) != v and v != 'all':
                     break
             else:
                 for p in pars:
@@ -581,6 +581,7 @@ class H2_exc():
         self.setgrid(pars=pars, fixed=fixed, show=False)
         self.compare(object, models=self.mask, syst=syst)
         self.grid['lnL'] = np.asarray([self.models[m].lnL for m in self.mask])
+        self.grid['cols'] = np.asarray([self.models[m].cols for m in self.mask])
 
         if plot:
             if len(pars) == 1:
@@ -672,7 +673,6 @@ class H2_exc():
 
         if logN is not None:
             for m in self.listofmodels(models):
-                print(m)
                 m.calc_cols(species, logN={'H2': logN})
 
         for ind, m in enumerate(self.listofmodels(models)):
@@ -796,7 +796,6 @@ if __name__ == '__main__':
         H2.readfolder()
         H2.plot_objects(objects='2123', ax=ax)
         name = H2.best(object='2123', syst=0.1)
-        print(H2.models[name].uv)
         if 1:
             H2.plot_models(ax=ax, models='all')
             H2.compare_models(speciesname=['NH2'], models='all', physcondname=['tgas'], logy=True,

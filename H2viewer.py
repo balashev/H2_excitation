@@ -1,13 +1,14 @@
 from functools import partial
 from matplotlib import cm
 import matplotlib.pyplot as plt
+import pickle
 from PyQt5.QtCore import (Qt, )
 from PyQt5.QtGui import (QFont, )
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, QWidget, QLabel,
                              QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox,
-                             QRadioButton, QButtonGroup, QComboBox, QTableView)
+                             QRadioButton, QButtonGroup, QComboBox, QTableView, QLineEdit)
 import pyqtgraph as pg
-
+from scipy.interpolate import interp2d, RectBivariateSpline, Rbf
 import sys
 sys.path.append('C:/science/python')
 from H2_exc import *
@@ -131,6 +132,25 @@ class plotExc(pg.PlotWidget):
             except:
                 pass
 
+    def add_temp(self, cols=None, pars=None, add=True):
+        if add:
+            j = np.sort([int(s[3:]) for s in cols.keys()])
+            x = [H2energy[0, i] for i in j]
+            mod = [cols['H2j'+str(i)] - np.log10(stat[i]) for i in j]
+            self.temp_model = pg.PlotCurveItem(x, mod)
+            self.vb.addItem(self.temp_model)
+            text = 'selected'
+            if pars is not None:
+                text += ' {0:.2f} {1:.2f}'.format(pars[0], pars[1])
+            self.legend_model.addItem(self.temp_model, text)
+        else:
+            try:
+                self.vb.removeItem(self.temp_model)
+                self.legend_model.removeItem(self.temp_model)
+            except:
+                pass
+
+
     def redraw(self):
         for i, v in enumerate(self.view.values()):
             v[1].setBrush(pg.mkBrush(cm.rainbow(0.01 + 0.98 * i / len(self.view), bytes=True)[:3] + (255,)))
@@ -143,7 +163,7 @@ class textLabel(pg.TextItem):
         self.text = text
         self.active = False
         self.name = name
-        pg.TextItem.__init__(self, text=text, fill=pg.mkBrush(0, 0, 0, 0))
+        pg.TextItem.__init__(self, text=text, fill=pg.mkBrush(0, 0, 0, 0), anchor=(0.5,0.5))
         self.setFont(QFont("SansSerif", 16))
         self.setPos(x, y)
         self.redraw()
@@ -180,7 +200,7 @@ class plotGrid(pg.PlotWidget):
         self.colormap = map.getLookupTable(0.0, 1.0, 256, alpha=False)
 
     def initstatus(self):
-        self.s_status = False
+        self.s_status = True
         self.selected_point = None
 
     def set_data(self, x=None, y=None, z=None, view='text'):
@@ -210,21 +230,22 @@ class plotGrid(pg.PlotWidget):
         super(plotGrid, self).mousePressEvent(event)
         if event.button() == Qt.LeftButton:
             if self.s_status:
+                name = self.parent.H2.grid['name']
                 self.mousePoint = self.vb.mapSceneToView(event.pos())
-                r = self.vb.viewRange()
-                self.ind = np.argmin(((self.mousePoint.x() - self.data['N']) / (r[0][1] - r[0][0]))**2   + ((self.mousePoint.y() - self.data['b']) / (r[1][1] - r[1][0]))**2)
-                if self.selected_point is not None:
-                    self.vb.removeItem(self.selected_point)
-                self.selected_point = pg.ScatterPlotItem(x=[self.data['N'][self.ind]], y=[self.data['b'][self.ind]], symbol='o', size=15,
-                                                        pen={'color': 0.8, 'width': 1}, brush=pg.mkBrush(230, 100, 10))
-                self.vb.addItem(self.selected_point)
-                N = [float(self.parent.item(i,1).text()) for i in range(self.parent.rowCount())]
-                b = [float(self.parent.item(i,3).text()) for i in range(self.parent.rowCount())]
-                ind = np.argmin((b - self.data['b'][self.ind])**2 + (N - self.data['N'][self.ind])**2)
-                #ind = np.where(np.logical_and(b == self.data['b'][self.ind], N == self.data['N'][self.ind]))[0][0]
-                #ind = np.where(np.logical_and(self.parent.data['b'] == self.data['b'][self.ind], self.parent.data['N'] == self.data['N'][self.ind]))[0][0]
-                self.parent.setCurrentCell(0, 0)
-                self.parent.row_clicked(ind)
+                print(self.mousePoint.x(), self.mousePoint.y())
+                if self.parent.grid_pars.cols is not None:
+                    cols = {}
+                    sp = self.parent.H2.grid['cols'][0].keys()
+                    lnL = 0
+                    for s in sp:
+                        v = self.parent.H2.comp(name).e[s].col
+                        cols[s] = self.parent.grid_pars.cols[s](self.mousePoint.x(), self.mousePoint.y())
+                        print(s, cols[s])
+                        v1 = v * a(0, 0.2, 0.2, 'l')
+                        if v.type == 'm':
+                            lnL += v1.lnL(cols[s])
+                    self.parent.plot_exc.add_temp(cols, add=False)
+                    self.parent.plot_exc.add_temp(cols, pars=[self.mousePoint.x(), self.mousePoint.y()])
 
     def keyPressEvent(self, event):
         super(plotGrid, self).keyPressEvent(event)
@@ -241,7 +262,8 @@ class plotGrid(pg.PlotWidget):
         if not event.isAutoRepeat():
 
             if event.key() == Qt.Key_S:
-                self.s_status = False
+                self.s_status = True
+                self.parent.plot_exc.add_temp([], add=False)
 
 class QSOlistTable(pg.TableWidget):
     def __init__(self, parent):
@@ -251,7 +273,7 @@ class QSOlistTable(pg.TableWidget):
         self.format = None
 
         self.contextMenu.addSeparator()
-        self.contextMenu.addAction('H2 compare').triggered.connect(self.compare)
+        #self.contextMenu.addAction('H2 compare').triggered.connect(self.compare)
 
         self.resize(100, 1200)
         self.show()
@@ -273,15 +295,20 @@ class QSOlistTable(pg.TableWidget):
 
     def compare(self):
         grid = self.parent.parent.grid_pars.pars
+        syst = float(self.parent.parent.grid_pars.addSyst.text())
         pars = [list(grid.keys())[list(grid.values()).index('x')],
                 list(grid.keys())[list(grid.values()).index('y')]]
         fixed = list(grid.keys())[list(grid.values()).index('fixed')]
-        fixed = {fixed: float(getattr(self.parent.parent.grid_pars, fixed + '_val').currentText())}
+        if getattr(self.parent.parent.grid_pars, fixed + '_val').currentText() != '':
+            fixed = {fixed: float(getattr(self.parent.parent.grid_pars, fixed + '_val').currentText())}
+        else:
+            fixed = {fixed: 'all'}
         for idx in self.selectedIndexes():
             # self.parent.normview = False
             name = self.cell_value('name')
-            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=0.5, plot=False)
+            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=syst, plot=False)
             grid = self.parent.parent.H2.grid
+            self.parent.parent.H2.grid['name'] = name
             #print('grid', grid['uv'], grid['n0'], grid['lnL'])
             self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
             self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
@@ -379,6 +406,7 @@ class gridParsWidget(QWidget):
         #self.move(400, 100)
         self.pars = {'uv': 'x', 'n0': 'y', 'me': 'fixed'}
         self.parent.H2.setgrid(pars=list(self.pars.keys()))
+        self.cols = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel('grid parameters:'))
@@ -403,11 +431,32 @@ class gridParsWidget(QWidget):
             layout.addLayout(l)
 
         l = QHBoxLayout(self)
+        l.addWidget(QLabel('add systematic unc.:'))
+        self.syst = 0.20
+        self.addSyst = QLineEdit()
+        self.addSyst.setText(str(self.syst))
+        #self.addSyst.clicked[bool].connect(self.exportIt)
+        self.addSyst.setFixedSize(90, 30)
+        l.addWidget(self.addSyst)
+        l.addStretch(1)
+
+        layout.addLayout(l)
+
+        l = QHBoxLayout(self)
         self.compare = QPushButton('Compare')
-        self.compare.clicked[bool].connect(self.parent.H2_systems.table.compare)
+        self.compare.clicked[bool].connect(self.compareIt)
         self.compare.setFixedSize(90, 30)
         l.addWidget(self.compare)
         l.addStretch(1)
+        self.plot = QPushButton('Plot:')
+        self.plot.clicked[bool].connect(self.plotIt)
+        self.plot.setFixedSize(90, 30)
+        l.addWidget(self.plot)
+        self.numPlot = QLineEdit()
+        self.numPlot.setText(str(30))
+        # self.addSyst.clicked[bool].connect(self.exportIt)
+        self.numPlot.setFixedSize(90, 30)
+        l.addWidget(self.numPlot)
         self.export = QPushButton('Export')
         self.export.clicked[bool].connect(self.exportIt)
         self.export.setFixedSize(90, 30)
@@ -422,15 +471,62 @@ class gridParsWidget(QWidget):
 
         self.setStyleSheet(open('styles.ini').read())
 
-    def exportIt(self):
+    def compareIt(self):
+        self.parent.H2_systems.table.compare()
+        self.interpolateIt()
+
+    def plotIt(self):
         grid = self.parent.H2.grid
-        print(grid)
-        d = distr2d(x=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]),
-                    y=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]]),
-                    z=np.exp(grid['lnL']))
+        if 0:
+            d = distr2d(x=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]),
+                        y=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]]),
+                        z=np.exp(grid['lnL']))
+        else:
+            num = int(self.numPlot.text())
+            x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
+            x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
+            X, Y = np.meshgrid(x, y)
+            z = np.zeros_like(X)
+            sp = grid['cols'][0].keys()
+            for i, xi in enumerate(x):
+                for k, yi in enumerate(y):
+                    lnL = 0
+                    for s in sp:
+                        v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
+                        #v1 *= a(0, 0.2, 0.2, 'l')
+                        v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
+                        if v1.type == 'm':
+                            lnL += v1.lnL(self.cols[s](xi, yi))
+                    z[k, i] = lnL
+            print(z)
+            with open('C:/science/Noterdaeme/Q0528/H2/H2.pkl', 'wb') as f:
+                pickle.dump([x, y, z], f)
+            d = distr2d(x=x, y=y, z=np.exp(z))
         d.plot_contour(color=None)
         plt.show()
 
+    def interpolateIt(self):
+        grid = self.parent.H2.grid
+        x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
+        print(x, y)
+        sp = grid['cols'][0].keys()
+        self.cols = {}
+        for s in sp:
+            if 0:
+                self.cols[s] = interp2d(x, y, [c[s] for c in grid['cols']], kind='cubic')
+            if 0:
+                xt, yt = np.unique(sorted(x)), np.unique(sorted(y))
+                z = np.zeros([xt.shape[0], yt.shape[0]])
+                for i, xi in enumerate(xt):
+                    for k, yk in enumerate(yt):
+                        z[i, k] = grid['cols'][np.argmin((xi - x) ** 2 + (yk - y) ** 2)][s]
+
+                self.cols[s] = RectBivariateSpline(xt, yt, z, kx=2, ky=2)
+            if 1:
+                self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='linear')
+
+    def exportIt(self):
+        pass
 
     def setGridView(self, par, b):
         self.pars[par] = b
@@ -443,7 +539,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data_01')
+        self.H2 = H2_exc(folder='data_01_temp')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
