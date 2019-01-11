@@ -13,6 +13,7 @@ import sys
 sys.path.append('C:/science/python')
 from H2_exc import *
 from spectro.stats import distr2d
+from spectro.a_unc import a
 
 class image():
     """
@@ -406,7 +407,7 @@ class gridParsWidget(QWidget):
         #self.move(400, 100)
         self.pars = {'uv': 'x', 'n0': 'y', 'me': 'fixed'}
         self.parent.H2.setgrid(pars=list(self.pars.keys()))
-        self.cols = None
+        self.cols, self.x_, self.y_, self.z_ = None, None, None, None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel('grid parameters:'))
@@ -432,10 +433,8 @@ class gridParsWidget(QWidget):
 
         l = QHBoxLayout(self)
         l.addWidget(QLabel('add systematic unc.:'))
-        self.syst = 0.20
         self.addSyst = QLineEdit()
-        self.addSyst.setText(str(self.syst))
-        #self.addSyst.clicked[bool].connect(self.exportIt)
+        self.addSyst.setText(str(0.2))
         self.addSyst.setFixedSize(90, 30)
         l.addWidget(self.addSyst)
         l.addStretch(1)
@@ -448,15 +447,18 @@ class gridParsWidget(QWidget):
         self.compare.setFixedSize(90, 30)
         l.addWidget(self.compare)
         l.addStretch(1)
-        self.plot = QPushButton('Plot:')
+        self.refine = QPushButton('Refine:')
+        self.refine.clicked[bool].connect(self.regridIt)
+        self.refine.setFixedSize(90, 30)
+        l.addWidget(self.refine)
+        self.numPlot = QLineEdit()
+        self.numPlot.setText(str(30))
+        self.numPlot.setFixedSize(90, 30)
+        l.addWidget(self.numPlot)
+        self.plot = QPushButton('Plot')
         self.plot.clicked[bool].connect(self.plotIt)
         self.plot.setFixedSize(90, 30)
         l.addWidget(self.plot)
-        self.numPlot = QLineEdit()
-        self.numPlot.setText(str(30))
-        # self.addSyst.clicked[bool].connect(self.exportIt)
-        self.numPlot.setFixedSize(90, 30)
-        l.addWidget(self.numPlot)
         self.export = QPushButton('Export')
         self.export.clicked[bool].connect(self.exportIt)
         self.export.setFixedSize(90, 30)
@@ -475,40 +477,9 @@ class gridParsWidget(QWidget):
         self.parent.H2_systems.table.compare()
         self.interpolateIt()
 
-    def plotIt(self):
-        grid = self.parent.H2.grid
-        if 0:
-            d = distr2d(x=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]),
-                        y=np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]]),
-                        z=np.exp(grid['lnL']))
-        else:
-            num = int(self.numPlot.text())
-            x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
-            x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
-            X, Y = np.meshgrid(x, y)
-            z = np.zeros_like(X)
-            sp = grid['cols'][0].keys()
-            for i, xi in enumerate(x):
-                for k, yi in enumerate(y):
-                    lnL = 0
-                    for s in sp:
-                        v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
-                        #v1 *= a(0, 0.2, 0.2, 'l')
-                        v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
-                        if v1.type == 'm':
-                            lnL += v1.lnL(self.cols[s](xi, yi))
-                    z[k, i] = lnL
-            print(z)
-            with open('C:/science/Noterdaeme/Q0528/H2/H2.pkl', 'wb') as f:
-                pickle.dump([x, y, z], f)
-            d = distr2d(x=x, y=y, z=np.exp(z))
-        d.plot_contour(color=None)
-        plt.show()
-
     def interpolateIt(self):
         grid = self.parent.H2.grid
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
-        print(x, y)
         sp = grid['cols'][0].keys()
         self.cols = {}
         for s in sp:
@@ -525,8 +496,45 @@ class gridParsWidget(QWidget):
             if 1:
                 self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='linear')
 
+    def regridIt(self, kind='fast'):
+        grid = self.parent.H2.grid
+        num = int(self.numPlot.text())
+        x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
+        x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
+        X, Y = np.meshgrid(x, y)
+        z = np.zeros_like(X)
+        sp = grid['cols'][0].keys()
+        species = {}
+        for s in sp:
+            v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
+            #if kind == 'fast':
+            #    v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(
+            #        v1.plus ** 2 + float(self.addSyst.text()) ** 2)
+            #elif kind == 'accurate':
+            v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
+            v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
+            species[s] = v1
+        for i, xi in enumerate(x):
+            for k, yi in enumerate(y):
+                lnL = 0
+                for s, v in species.items():
+                    if v.type == 'm':
+                        lnL += v.lnL(self.cols[s](xi, yi))
+                z[k, i] = lnL
+        self.x_, self.y_, self.z_ = x, y, z
+
+    def plotIt(self):
+        if self.x is not None:
+            d = distr2d(x=self.x_, y=self.y_, z=np.exp(self.z_))
+            dx, dy = d.marginalize('y'), d.marginalize('x')
+            dx.stats(latex=2, name=list(self.pars.keys())[list(self.pars.values()).index('x')])
+            dy.stats(latex=2, name=list(self.pars.keys())[list(self.pars.values()).index('y')])
+            d.plot(color=None)
+            plt.show()
+
     def exportIt(self):
-        pass
+        with open('output/{:s}.pkl'.format(self.parent.H2.grid['name']), 'wb') as f:
+            pickle.dump([self.x_, self.y_, self.z_], f)
 
     def setGridView(self, par, b):
         self.pars[par] = b

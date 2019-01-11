@@ -374,17 +374,17 @@ class model():
 
         if logN is not None:
             logN[list(logN.keys())[0]] -= np.log10(sides)
-            self.set_mask(logN=logN)
+            self.set_mask(logN=logN, sides=sides)
 
         cols = OrderedDict()
         for s in species:
-            cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask]) * sides)
+            cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10(sides)
 
         self.cols = cols
 
         return self.cols
 
-    def set_mask(self, logN={'H': None}):
+    def set_mask(self, logN={'H': None}, sides=2):
         """
         Calculate mask for a given threshold
 
@@ -394,6 +394,11 @@ class model():
         :return: None
         """
         cols = np.insert(np.log10(integrate.cumtrapz(self.sp[list(logN.keys())[0]], x=self.x)), 0, 0)
+
+        l = int(len(self.x) / sides) + 1 if sides > 1 else len(self.x)
+        if logN[list(logN.keys())[0]] > cols[l-1]:
+            logN[list(logN.keys())[0]] = cols[l-1]
+
         if logN is not None:
             self.mask = cols < logN[list(logN.keys())[0]]
         else:
@@ -407,7 +412,8 @@ class model():
             self.showSummary()
         for k, v in species.items():
             v1 = v
-            v1 *= a(0, syst, syst, 'l')
+            if syst > 0:
+                v1 *= a(0, syst, syst, 'l')
             if verbose:
                 print(self.cols[k], v1.log(), v1.lnL(self.cols[k]))
             if v.type == 'm':
@@ -570,11 +576,11 @@ class H2_exc():
 
         q = self.comp(object)
 
+        species = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in q.e.keys() if ('H2j' in s) and ('v' not in s)])
+
         for model in self.listofmodels(models):
-            #print(model)
-            species = OrderedDict([(s, q.e[s].col) for s in q.e.keys() if ('H2j' in s) and ('v' not in s)])
             model.calc_cols(species.keys(), logN={'H2': q.e['H2'].col.val})
-            model.lnLike(species, syst=syst)
+            model.lnLike(species)
 
     def comparegrid(self, object='0643', pars=[], fixed={}, syst=0.0, plot=True, show_best=True):
 
