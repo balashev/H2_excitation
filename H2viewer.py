@@ -496,7 +496,7 @@ class gridParsWidget(QWidget):
             if 1:
                 self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='linear')
 
-    def regridIt(self, kind='fast'):
+    def regridIt(self, kind='fast', save=True):
         grid = self.parent.H2.grid
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
@@ -514,14 +514,23 @@ class gridParsWidget(QWidget):
             v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
             v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
             species[s] = v1
+        if save:
+            cols = self.cols.copy()
+            for s in cols.keys():
+                cols[s] = z
         for i, xi in enumerate(x):
             for k, yi in enumerate(y):
                 lnL = 0
                 for s, v in species.items():
                     if v.type == 'm':
                         lnL += v.lnL(self.cols[s](xi, yi))
+                        cols[s][i, k] = self.cols[s](xi, yi)
                 z[k, i] = lnL
         self.x_, self.y_, self.z_ = x, y, z
+        if save:
+            for s in cols.keys():
+                with open('temp/{:s}'.format(s), 'wb') as f:
+                    pickle.dump([self.x_, self.y_, cols[s]], f)
 
     def plotIt(self):
         if self.x is not None:
@@ -547,7 +556,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data_01_temp')
+        self.H2 = H2_exc(folder='data_01_temp2')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
