@@ -295,7 +295,7 @@ class QSOlistTable(pg.TableWidget):
         self.format = None
 
         self.contextMenu.addSeparator()
-        #self.contextMenu.addAction('H2 compare').triggered.connect(self.compare)
+        self.contextMenu.addAction('results').triggered.connect(self.show_results)
 
         self.resize(100, 1200)
         self.show()
@@ -336,6 +336,36 @@ class QSOlistTable(pg.TableWidget):
             self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
             #self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
             #self.scale = [(self.x[-1] - self.x[0]) / (self.x.shape[0] - 1), (self.y[-1] - self.y[0]) / (self.y.shape[0] - 1)]
+
+    def show_results(self):
+        for idx in self.selectedIndexes():
+            if idx.column() == 0:
+                name = self.cell_value('name')
+                str = "".join(['result/all/', name, '.pkl'])
+                strnodes = "".join(['result/all/nodes/', name, '.pkl'])
+                with open(strnodes, 'rb') as f:
+                    x1, y1, z1 = pickle.load(f)
+                with open(str, 'rb') as f:
+                    x, y, z = pickle.load(f)
+                    X, Y = np.meshgrid(x, y)
+                    plt.subplot(1, 2, 1)
+                    plt.pcolor(X, Y, z, cmap=cm.jet, vmin=-50, vmax=0)
+                    plt.scatter(x1, y1, 100, z1, cmap=cm.jet, vmin=-50, vmax=0)  # ,edgecolors='black')
+                    plt.title('RBF interpolation - likelihood')
+                    plt.xlim(-1.2, 3.2)
+                    plt.ylim(0.8, 5.2)
+                    plt.colorbar()
+
+                    d = distr2d(x=x, y=y, z=np.exp(z))
+                    dx, dy = d.marginalize('y'), d.marginalize('x')
+                    dx.stats(latex=2, name='log UV')
+                    dy.stats(latex=2, name='log n')
+                    # d.plot(color=None)
+                    ax = plt.subplot(1, 2, 2)
+                    d.plot_contour(ax=ax, color='lime', xlabel='$\log n$ [cm$^{-3}$]', ylabel='$\log I_{UV}$ [Draine field]')
+                    d.plot(color='lime', xlabel='$\log n$ [cm$^{-3}$]', ylabel='$\log I_{UV}$ [Draine field]')
+
+                    plt.show()
 
     def columnIndex(self, columnname):
         return [self.horizontalHeaderItem(x).text() for x in range(self.columnCount())].index(columnname)
