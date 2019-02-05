@@ -224,8 +224,9 @@ class model():
 
         self.species = species
 
-    def showSummary(self, pars=['z', 'P', 'uv']):
+    def showSummary(self, pars=['me', 'n', 'uv']):
         print('model: ' + self.name)
+        #print('me', ' : ', getattr(self, 'me'))
         for p in pars:
             print(p, ' : ', getattr(self, p))
             #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
@@ -408,14 +409,15 @@ class model():
 
     def lnLike(self, species={}, syst=0, verbose=False):
         lnL = 0
-        if verbose:
+        if 0:
+            #verbose:
             self.showSummary()
         for k, v in species.items():
             v1 = v
             if syst > 0:
                 v1 *= a(0, syst, syst, 'l')
             if verbose:
-                print(self.cols[k], v1.log(), v1.lnL(self.cols[k]))
+                print(np.log10(self.uv), np.log10(self.n0), self.cols[k], v1.log(), v1.lnL(self.cols[k]))
             if v.type == 'm':
                 lnL += v1.lnL(self.cols[k])
 
@@ -451,6 +453,7 @@ class H2_exc():
             m = model(folder=folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
+            print(m.name,m.me)
 
             if show_summary:
                 m.showSummary()
@@ -797,16 +800,16 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
 
     fig, ax = plt.subplots()
-    H2 = H2_exc(folder='data/')
-    if 0:
+    H2 = H2_exc(folder='data/ztest/')
+    if 1:
         H2.readfolder()
-        H2.plot_objects(objects='2123', ax=ax)
-        name = H2.best(object='2123', syst=0.1)
+        H2.plot_objects(objects='0000', ax=ax)
+        name = H2.best(object='0000', syst=0.1)
         if 1:
             H2.plot_models(ax=ax, models='all')
-            H2.compare_models(speciesname=['NH2'], models='all', physcondname=['tgas'], logy=True,
-                              parx='x')  # physcondname=['tgas','n'],
-            H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
+            H2.compare_models(speciesname=['NH2j0'], models='all', physcondname=['tgas'], logy=True,
+                              parx='av')  # physcondname=['tgas','n'],
+            #H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
             # H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
             # H2.compare_models(speciesname=['NH2'], models='all', logy=True)
             # H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
@@ -815,7 +818,7 @@ if __name__ == '__main__':
             H2.plot_models(ax=ax, models=name)
 
     H2.plot_objects(objects=H2.H2.all())
-    if 1:
+    if 0:
         m = model(folder='data/', filename='h2uv_uv12_av0_05_z0_16_n3e1_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1'])
         m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
     if 0:

@@ -14,6 +14,7 @@ sys.path.append('C:/science/python')
 from H2_exc import *
 from spectro.stats import distr2d
 from spectro.a_unc import a
+import copy
 
 class image():
     """
@@ -138,6 +139,26 @@ class plotExc(pg.PlotWidget):
             j = np.sort([int(s[3:]) for s in cols.keys()])
             x = [H2energy[0, i] for i in j]
             mod = [cols['H2j'+str(i)] - np.log10(stat[i]) for i in j]
+            if 1:
+                print(cols['H2j'+str(i)] for i in j)
+                grid = self.parent.H2.grid
+                species = {}
+                sp = grid['cols'][0].keys()
+                for s in sp:
+                    v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
+                    # if kind == 'fast':
+                    #    v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(
+                    #        v1.plus ** 2 + float(self.addSyst.text()) ** 2)
+                    # elif kind == 'accurate':
+                    v1 *= a(0, 0.2, 0.2, 'l')
+                    #v1.plus, v1.minus = 0.2, 0.2
+                    species[s] = v1
+                lnL = 0
+                for s, v in species.items():
+                    if v.type == 'm':
+                        lnL += v.lnL(cols[s])
+                print(lnL)
+
             self.temp_model = pg.PlotCurveItem(x, mod)
             self.vb.addItem(self.temp_model)
             text = 'selected'
@@ -241,7 +262,7 @@ class plotGrid(pg.PlotWidget):
                     for s in sp:
                         v = self.parent.H2.comp(name).e[s].col
                         cols[s] = self.parent.grid_pars.cols[s](self.mousePoint.x(), self.mousePoint.y())
-                        print(s, cols[s])
+                        print(self.mousePoint.x(), self.mousePoint.y(),s, cols[s])
                         v1 = v * a(0, 0.2, 0.2, 'l')
                         if v.type == 'm':
                             lnL += v1.lnL(cols[s])
@@ -493,14 +514,24 @@ class gridParsWidget(QWidget):
                         z[i, k] = grid['cols'][np.argmin((xi - x) ** 2 + (yk - y) ** 2)][s]
 
                 self.cols[s] = RectBivariateSpline(xt, yt, z, kx=2, ky=2)
+            if 0:
+                if s=='H2j0' or s=='H2j1':
+                    self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='inverse', epsilon=0.3)
+                else:
+                    self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='multiquadric',smooth=0.2)
             if 1:
-                self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='linear')
+                self.cols[s] = Rbf(x, y, np.asarray([c[s] for c in grid['cols']]), function='multiquadric', smooth=0.1)
+
+
+                #rbf = Rbf(x,y,z,function='multiquadric',smooth=0.2)
+
 
     def regridIt(self, kind='fast', save=True):
         grid = self.parent.H2.grid
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
-        x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
+        x1,y1 = x,y # copy for save
+        x, y = np.linspace(np.min(x), np.max(x), 2*num), np.linspace(np.min(y), np.max(y), num)
         X, Y = np.meshgrid(x, y)
         z = np.zeros_like(X)
         sp = grid['cols'][0].keys()
@@ -512,25 +543,43 @@ class gridParsWidget(QWidget):
             #        v1.plus ** 2 + float(self.addSyst.text()) ** 2)
             #elif kind == 'accurate':
             v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
-            v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
+            #v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
             species[s] = v1
         if save:
-            cols = self.cols.copy()
-            for s in cols.keys():
-                cols[s] = z
+            cols = {}
+            for s in self.cols.keys():
+                cols[s] = np.zeros_like(z)
         for i, xi in enumerate(x):
             for k, yi in enumerate(y):
+                print('i,k = ',i,k)
                 lnL = 0
                 for s, v in species.items():
                     if v.type == 'm':
                         lnL += v.lnL(self.cols[s](xi, yi))
-                        cols[s][i, k] = self.cols[s](xi, yi)
+                        cols[s][k, i] = self.cols[s](xi, yi)
+                        #print(xi,yi, self.cols[s](xi, yi),v.log(), v.lnL(self.cols[s](xi, yi)))
                 z[k, i] = lnL
+                #print('lnL(i,k) = ',lnL)
         self.x_, self.y_, self.z_ = x, y, z
+
         if save:
             for s in cols.keys():
                 with open('temp/{:s}'.format(s), 'wb') as f:
                     pickle.dump([self.x_, self.y_, cols[s]], f)
+
+                z1 = np.asarray([c[s] for c in grid['cols']])
+                with open('temp/{:s}_nodes'.format(s), 'wb') as f:
+                    pickle.dump([x1, y1, z1], f)
+
+            lnL1 = np.asarray(grid['lnL'])
+            with open('output/nodes/{:s}.pkl'.format(self.parent.H2.grid['name']), 'wb') as f:
+                pickle.dump([x1, y1, lnL1], f)
+            with open('temp/lnL_nodes.pkl', 'wb') as f:
+                pickle.dump([x1, y1, lnL1], f)
+
+#            with open('temp/{:s}lnL_nodes.pkl'.format(s), 'wb') as f:
+#                pickle.dump([x1, y1, lnL1], f)
+
 
     def plotIt(self):
         if self.x is not None:
@@ -541,8 +590,11 @@ class gridParsWidget(QWidget):
             d.plot(color=None)
             plt.show()
 
+
     def exportIt(self):
         with open('output/{:s}.pkl'.format(self.parent.H2.grid['name']), 'wb') as f:
+            pickle.dump([self.x_, self.y_, self.z_], f)
+        with open('temp/lnL.pkl', 'wb') as f:
             pickle.dump([self.x_, self.y_, self.z_], f)
 
     def setGridView(self, par, b):
@@ -556,7 +608,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data_01_temp2')
+        self.H2 = H2_exc(folder='data/sample/z0.1')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
