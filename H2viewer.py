@@ -560,8 +560,8 @@ class gridParsWidget(QWidget):
         grid = self.parent.H2.grid
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
-        x1,y1 = x,y # copy for save
-        x, y = np.linspace(np.min(x), np.max(x), 2*num), np.linspace(np.min(y), np.max(y), num)
+        x1, y1 = x, y # copy for save
+        x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
         X, Y = np.meshgrid(x, y)
         z = np.zeros_like(X)
         sp = grid['cols'][0].keys()
@@ -581,7 +581,7 @@ class gridParsWidget(QWidget):
                 cols[s] = np.zeros_like(z)
         for i, xi in enumerate(x):
             for k, yi in enumerate(y):
-                print('i,k = ',i,k)
+                print('i, k = ', i, k)
                 lnL = 0
                 for s, v in species.items():
                     if v.type == 'm':
@@ -638,7 +638,7 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data/sample/z0.1')
+        self.H2 = H2_exc(folder='data_z0.5')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()

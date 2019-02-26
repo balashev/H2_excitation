@@ -33,9 +33,11 @@ spcode = {'H': 'n_h', 'H2': 'n_h2',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'H2j8': 'pop_h2_v0_j8', 'H2j9': 'pop_h2_v0_j9', 'H2j10': 'pop_h2_v0_j10',
+          'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
           'NH2': 'cd_prof_h2',  'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1','NH2j2': 'cd_lev_prof_h2_v0_j2','NH2j3': 'cd_lev_prof_h2_v0_j3','NH2j4': 'cd_lev_prof_h2_v0_j4','NH2j5': 'cd_lev_prof_h2_v0_j5',
           'NH2j6': 'cd_lev_prof_h2_v0_j6', 'NH2j7': 'cd_lev_prof_h2_v0_j7','NH2j8': 'cd_lev_prof_h2_v0_j8','NH2j9': 'cd_lev_prof_h2_v0_j9','NH2j10': 'cd_lev_prof_h2_v0_j10','NH2j11': 'cd_lev_prof_h2_v0_j11',
+          'NHD': 'cd_prof_hd',
           'H2_dest_rate': 'h2_dest_rate_ph', 'H2_form_rate_er': 'h2_form_rate_er','H2_form_rate_lh': 'h2_form_rate_lh','H2_photo_dest_prob': 'photo_prob___h2_photon_gives_h_h',
           'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe'
          }
@@ -146,6 +148,7 @@ class model():
         self.x = self.par('distance')
 
         self.h2 = self.par('cd_prof_h2')
+        self.hd = self.par('cd_prof_hd')
         self.av = self.par('av')
         self.tgas = self.par('tgas')
         self.pgas = self.par('pgas')
@@ -329,7 +332,7 @@ class model():
 
         if logx:
             mask = getattr(self, parx) > 0
-            x = np.log10(getattr(self, parx)[mask])
+            x = np.log10(getattr(self, parx))[mask]
         else:
             mask = getattr(self, parx) > -1
             x = getattr(self, parx)[mask]
@@ -344,14 +347,14 @@ class model():
 #            ax.plot(np.log10(self.x[1:]), np.log10(self.sp[s][1:]), '-', label=s, lw=lw)
         for s in species:
             if logy:
-                ax.plot(x[mask], np.log10(self.sp[s][mask]), ls=ls, label=s, lw=lw, linewidth=2.0)
+                ax.plot(x, np.log10(self.sp[s][mask]), ls=ls, label=s, lw=lw, linewidth=2.0)
             else:
-                ax.plot(x[mask], self.sp[s][mask], ls=ls, label=s, lw=lw, linewidth=2.0)
+                ax.plot(x, self.sp[s][mask], ls=ls, label=s, lw=lw, linewidth=2.0)
 
         if label:
             #ax.set_xlim([x[0], x[-1]])
-            ax.set_xlabel(xlabel,fontsize=20)
-            ax.set_ylabel(species[0],fontsize=20)
+            ax.set_xlabel(xlabel, fontsize=20)
+            ax.set_ylabel(species[0], fontsize=20)
             ax.legend(loc='upper left')
 
         if legend:
@@ -438,7 +441,8 @@ class H2_exc():
         sys.path.append('/home/toksovogo/science/codes/python/3.5/')
         import H2_summary
 
-        self.H2 = H2_summary.load_QSO()
+        #self.H2 = H2_summary.load_QSO()
+        self.H2 = H2_summary.load_P94()
 
     def readmodel(self, filename=None, show_summary=False, folder=None):
         """
@@ -453,7 +457,7 @@ class H2_exc():
             m = model(folder=folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
-            print(m.name,m.me)
+            print(m.name, m.me)
 
             if show_summary:
                 m.showSummary()
@@ -799,28 +803,35 @@ if __name__ == '__main__':
 
     app = QtGui.QApplication([])
 
-    fig, ax = plt.subplots()
-    H2 = H2_exc(folder='data/ztest/')
     if 1:
-        H2.readfolder()
-        H2.plot_objects(objects='0000', ax=ax)
-        name = H2.best(object='0000', syst=0.1)
-        if 1:
-            H2.plot_models(ax=ax, models='all')
-            H2.compare_models(speciesname=['NH2j0'], models='all', physcondname=['tgas'], logy=True,
-                              parx='av')  # physcondname=['tgas','n'],
-            #H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
-            # H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
-            # H2.compare_models(speciesname=['NH2'], models='all', logy=True)
-            # H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
-            # H2.compare_models(speciesname=['H2'], models='all', logy=True, parx='x')
-        else:
-            H2.plot_models(ax=ax, models=name)
-
-    H2.plot_objects(objects=H2.H2.all())
-    if 0:
-        m = model(folder='data/', filename='h2uv_uv12_av0_05_z0_16_n3e1_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1'])
+        m = model(folder='data_01_temp2/', filename='h2uv_uv1e0_av0_5_z0_1_n1e2_s_25.hdf5', show_meta=True, species=['H', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1'])
         m.plot_phys_cond(pars=['tgas', 'n', 'av', 'N_H2'])
+        m.plot_profiles(species=['H2', 'HD'], logx=True, logy=True, parx='x')
+        fig, ax = plt.subplots()
+        ax.plot(np.log10(m.hd), np.log10(m.h2), '-k')
+        print(m.x, m.h2, m.hd)
+
+    if 0:
+        fig, ax = plt.subplots()
+        H2 = H2_exc(folder='data_01_temp2/')
+        if 0:
+            H2.readfolder()
+            H2.plot_objects(objects='0000', ax=ax)
+            name = H2.best(object='0000', syst=0.1)
+            if 1:
+                H2.plot_models(ax=ax, models='all')
+                H2.compare_models(speciesname=['NH2j0'], models='all', physcondname=['tgas'], logy=True,
+                                  parx='av')  # physcondname=['tgas','n'],
+                #H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='av')
+                # H2.compare_models(speciesname=['H2_photo_dest_prob'], models='all', logy=True, parx='x')
+                # H2.compare_models(speciesname=['NH2'], models='all', logy=True)
+                # H2.compare_models(speciesname=['NH2'], models='all', logy=True, parx='x')
+                # H2.compare_models(speciesname=['H2'], models='all', logy=True, parx='x')
+            else:
+                H2.plot_models(ax=ax, models=name)
+
+        H2.plot_objects(objects=H2.H2.all())
+
     if 0:
         H2.readfolder()
         #H2.plot_objects(objects=['0643', '0843'], ax=ax)
