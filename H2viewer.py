@@ -197,11 +197,23 @@ class textLabel(pg.TextItem):
             self.setColor((255, 255, 255))
         self.parent.parent.plot_exc.add_model(self.name, add=self.active)
 
+    def plot_model(self):
+        print(self.parent.parent.H2.grid['NH2tot'])
+        m = self.parent.parent.H2.listofmodels(self.name)[0]
+        m.plot_model(parx='x', pars=['tgas', 'n'],
+                     species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'Cj0', 'Cj1', 'Cj2'],
+                              ['NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5']],
+                     logx=True, logy=True, limit={'NH2': 10**self.parent.parent.H2.grid['NH2tot'] / 2 })
+        plt.show()
+
     def mouseClickEvent(self, ev):
 
-        if ev.double():
+        if (QApplication.keyboardModifiers() == Qt.ShiftModifier):
             self.active = not self.active
             self.redraw()
+
+        if (QApplication.keyboardModifiers() == Qt.ControlModifier):
+            self.plot_model()
 
     def clicked(self, pts):
         print("clicked: %s" % pts)
@@ -317,7 +329,7 @@ class QSOlistTable(pg.TableWidget):
 
     def compare(self):
         grid = self.parent.parent.grid_pars.pars
-        syst = float(self.parent.parent.grid_pars.addSyst.text())
+        syst = float(self.parent.parent.grid_pars.addSyst.text()) if self.parent.parent.grid_pars.addSyst.text().strip() != '' else 0
         pars = [list(grid.keys())[list(grid.values()).index('x')],
                 list(grid.keys())[list(grid.values()).index('y')]]
         fixed = list(grid.keys())[list(grid.values()).index('fixed')]
@@ -326,16 +338,16 @@ class QSOlistTable(pg.TableWidget):
         else:
             fixed = {fixed: 'all'}
         for idx in self.selectedIndexes():
-            # self.parent.normview = False
-            name = self.cell_value('name')
-            self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=syst, plot=False)
-            grid = self.parent.parent.H2.grid
-            self.parent.parent.H2.grid['name'] = name
-            #print('grid', grid['uv'], grid['n0'], grid['lnL'])
-            self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
-            self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
-            #self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
-            #self.scale = [(self.x[-1] - self.x[0]) / (self.x.shape[0] - 1), (self.y[-1] - self.y[0]) / (self.y.shape[0] - 1)]
+            if idx.column() == 0:
+                name = self.cell_value('name')
+                self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=syst, plot=False, levels=self.parent.parent.grid_pars.H2levels)
+                grid = self.parent.parent.H2.grid
+                self.parent.parent.H2.grid['name'] = name
+                print('grid', grid['uv'], grid['n0'], grid['lnL'])
+                self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
+                self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
+                #self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
+                #self.scale = [(self.x[-1] - self.x[0]) / (self.x.shape[0] - 1), (self.y[-1] - self.y[0]) / (self.y.shape[0] - 1)]
 
     def show_results(self):
         for idx in self.selectedIndexes():
@@ -456,8 +468,8 @@ class gridParsWidget(QWidget):
         self.parent = parent
         #self.resize(700, 900)
         #self.move(400, 100)
-        self.pars = {'uv': 'x', 'n0': 'y', 'me': 'fixed'}
-        self.parent.H2.setgrid(pars=list(self.pars.keys()))
+        self.pars = {'n0': 'x', 'uv': 'y', 'me': 'fixed'}
+        self.parent.H2.setgrid(pars=list(self.pars.keys()), show=False)
         self.cols, self.x_, self.y_, self.z_ = None, None, None, None
 
         layout = QVBoxLayout(self)
@@ -489,7 +501,6 @@ class gridParsWidget(QWidget):
         self.addSyst.setFixedSize(90, 30)
         l.addWidget(self.addSyst)
         l.addStretch(1)
-
         layout.addLayout(l)
 
         l = QHBoxLayout(self)
@@ -497,13 +508,20 @@ class gridParsWidget(QWidget):
         self.compare.clicked[bool].connect(self.compareIt)
         self.compare.setFixedSize(90, 30)
         l.addWidget(self.compare)
+        self.H2levels = np.arange(6)
+        self.levels = QLineEdit(" ".join([str(i) for i in self.H2levels]))
+        self.levels.setFixedSize(90, 30)
+        self.levels.editingFinished.connect(self.setLevels)
+        l.addWidget(self.levels)
         l.addStretch(1)
+        layout.addLayout(l)
+
+        l = QHBoxLayout(self)
         self.refine = QPushButton('Refine:')
         self.refine.clicked[bool].connect(self.regridIt)
         self.refine.setFixedSize(90, 30)
         l.addWidget(self.refine)
-        self.numPlot = QLineEdit()
-        self.numPlot.setText(str(30))
+        self.numPlot = QLineEdit(str(30))
         self.numPlot.setFixedSize(90, 30)
         l.addWidget(self.numPlot)
         self.plot = QPushButton('Plot')
@@ -515,7 +533,6 @@ class gridParsWidget(QWidget):
         self.export.setFixedSize(90, 30)
         l.addWidget(self.export)
         l.addStretch(1)
-
         layout.addLayout(l)
 
         layout.addStretch(1)
@@ -523,6 +540,12 @@ class gridParsWidget(QWidget):
         self.setLayout(layout)
 
         self.setStyleSheet(open('styles.ini').read())
+
+    def setLevels(self):
+        try:
+            self.H2levels = [int(s) for s in self.levels.text().split()]
+        except:
+            pass
 
     def compareIt(self):
         self.parent.H2_systems.table.compare()
@@ -565,6 +588,9 @@ class gridParsWidget(QWidget):
         X, Y = np.meshgrid(x, y)
         z = np.zeros_like(X)
         sp = grid['cols'][0].keys()
+        print(sp)
+        sp = [s for s in sp if int(s[3:]) in self.H2levels]
+        print(sp)
         species = {}
         for s in sp:
             v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
@@ -581,7 +607,6 @@ class gridParsWidget(QWidget):
                 cols[s] = np.zeros_like(z)
         for i, xi in enumerate(x):
             for k, yi in enumerate(y):
-                print('i, k = ', i, k)
                 lnL = 0
                 for s, v in species.items():
                     if v.type == 'm':
@@ -609,7 +634,6 @@ class gridParsWidget(QWidget):
 
 #            with open('temp/{:s}lnL_nodes.pkl'.format(s), 'wb') as f:
 #                pickle.dump([x1, y1, lnL1], f)
-
 
     def plotIt(self):
         if self.x is not None:
@@ -639,6 +663,7 @@ class H2viewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.H2 = H2_exc(folder='data_z0.5')
+        #self.H2 = H2_exc(folder='data_01_temp2')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
