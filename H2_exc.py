@@ -34,14 +34,15 @@ spcode = {'H': 'n_h', 'H2': 'n_h2', 'H+': 'n_hp',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'H2j8': 'pop_h2_v0_j8', 'H2j9': 'pop_h2_v0_j9', 'H2j10': 'pop_h2_v0_j10',
-          'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
+          'D': 'n_d', 'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
           'Cj0': 'pop_c_el3p_j0', 'Cj1': 'pop_c_el3p_j1', 'Cj2': 'pop_c_el3p_j2',
           'NH2': 'cd_prof_h2',  'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1','NH2j2': 'cd_lev_prof_h2_v0_j2','NH2j3': 'cd_lev_prof_h2_v0_j3','NH2j4': 'cd_lev_prof_h2_v0_j4','NH2j5': 'cd_lev_prof_h2_v0_j5',
           'NH2j6': 'cd_lev_prof_h2_v0_j6', 'NH2j7': 'cd_lev_prof_h2_v0_j7','NH2j8': 'cd_lev_prof_h2_v0_j8','NH2j9': 'cd_lev_prof_h2_v0_j9','NH2j10': 'cd_lev_prof_h2_v0_j10','NH2j11': 'cd_lev_prof_h2_v0_j11',
           'NHD': 'cd_prof_hd',
           'H2_dest_rate': 'h2_dest_rate_ph', 'H2_form_rate_er': 'h2_form_rate_er','H2_form_rate_lh': 'h2_form_rate_lh','H2_photo_dest_prob': 'photo_prob___h2_photon_gives_h_h',
-          'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe'
+          'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe',
+          'H2_diss': 'h2_dest_rate_ph',
          }
 
 class plot(pg.PlotWidget):
@@ -445,13 +446,17 @@ class model():
             -  sp            :  dictionary of the column densities by species
         """
 
+        cols = OrderedDict()
+
         if logN is not None:
             logN[list(logN.keys())[0]] -= np.log10(sides)
             self.set_mask(logN=logN, sides=sides)
 
-        cols = OrderedDict()
-        for s in species:
-            cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10(sides)
+            for s in species:
+                cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10(sides)
+        else:
+            for s in species:
+                cols[s] = np.log10(integrate.cumtrapz(self.sp[s], x=self.x))
 
         self.cols = cols
 
@@ -497,22 +502,25 @@ class model():
         return self.lnL
 
 class H2_exc():
-    def __init__(self, folder=''):
+    def __init__(self, folder='', H2database='all'):
         self.folder = folder if folder.endswith('/') else folder + '/'
         self.models = {}
         self.species = ['H', 'H+', 'H2', 'C', 'C+', 'CO', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9', 'H2j10',
                         'NH2', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NH2j6', 'NH2j7', 'NH2j8', 'NH2j9', 'NH2j10',
                         'HD', 'HDj0', 'HDj1', 'Cj0', 'Cj1', 'Cj2',
                         'H2_dest_rate', 'H2_form_rate_er', 'H2_form_rate_lh', 'H2_photo_dest_prob']
-        self.readH2database()
+        self.readH2database(H2database)
 
-    def readH2database(self):
+    def readH2database(self, data='all'):
         import sys
         sys.path.append('/home/toksovogo/science/codes/python/3.5/')
         import H2_summary
 
-        #self.H2 = H2_summary.load_QSO()
-        self.H2 = H2_summary.load_P94()
+        self.H2 = H2_summary.load_empty()
+        if data == 'all':
+            self.H2.append(H2_summary.load_QSO())
+        if data in ['all', 'P94']:
+            self.H2.append(H2_summary.load_P94())
 
     def readmodel(self, filename=None, show_summary=False, folder=None):
         """
@@ -527,7 +535,6 @@ class H2_exc():
             m = model(folder=folder, filename=filename, species=self.species, show_summary=False)
             self.models[m.name] = m
             self.current = m.name
-            print(m.name, m.me)
 
             if show_summary:
                 m.showSummary()
@@ -872,22 +879,29 @@ if __name__ == '__main__':
 
     app = QtGui.QApplication([])
 
-    if 1:
-        m = model(folder='data_01_temp2/', filename='h2uv_uv1e0_av0_5_z0_1_n1e3_s_25.hdf5', show_meta=True, species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'Cj0', 'Cj1', 'Cj2', 'C+'])
-        m.plot_model(parx='x', pars=['tgas', 'n', 'N_H2'], species=['H', 'H+', 'H2', 'Cj0', 'Cj1', 'Cj2', 'C+'], logx=True, logy=True)
+    if 0:
+        m = model(folder='data_rough/', filename='h2uv_uv1e0_av0_5_z0_n1e2_s_25.hdf5', show_meta=False,
+                  species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'D', 'Cj0', 'Cj1', 'Cj2', 'C+', 'NH2', 'NHD', 'H2_diss'])
+        m.plot_model(parx='x', pars=['tgas', 'n'], species=[['H', 'H+', 'H2', 'HD', 'D'], ['NH2', 'NHD']], logx=True, logy=True)
+
+        fig, ax = plt.subplots()
+        if 0:
+            m.calc_cols(species=['Cj0', 'Cj1', 'Cj2'])
+            ax.plot(np.log10(m.x[1:]), np.log10(m.cols['Cj1'] / m.cols['Cj0']), '-k')
+        else:
+            m.calc_cols(species=['Cj0', 'Cj1', 'Cj2'], logN={'H2': 19.5})
+            print(m.cols['Cj0'], m.cols['Cj1'], m.cols['Cj2'])
+            ax.plot(np.log10(m.h2), np.log10(m.sp['H2_diss'] / m.sp['H2']))
+
         #m.plot_phys_cond(pars=['tgas', 'n', 'N_H2'])
         #m.plot_profiles(species=['H2', 'HD', 'Cj0', 'Cj1', 'Cj2'], logx=True, logy=True, parx='x')
-        fig, ax = plt.subplots()
-        ax.plot(np.log10(m.hd), np.log10(m.h2), '-k')
-        print(m.x, m.h2, m.hd)
+        #print(m.x, m.h2, m.hd)
 
-    if 0:
+    if 1:
         fig, ax = plt.subplots()
-        H2 = H2_exc(folder='data_01_temp2/')
-        if 0:
+        H2 = H2_exc(folder='C:/Users/Serj/Desktop/Meudon/')
+        if 1:
             H2.readfolder()
-            H2.plot_objects(objects='0000', ax=ax)
-            name = H2.best(object='0000', syst=0.1)
             if 1:
                 H2.plot_models(ax=ax, models='all')
                 H2.compare_models(speciesname=['NH2j0'], models='all', physcondname=['tgas'], logy=True,

@@ -518,12 +518,32 @@ class gridParsWidget(QWidget):
 
         l = QHBoxLayout(self)
         self.refine = QPushButton('Refine:')
-        self.refine.clicked[bool].connect(self.regridIt)
+        self.refine.clicked[bool].connect(partial(self.regridIt, kind='accurate'))
         self.refine.setFixedSize(90, 30)
         l.addWidget(self.refine)
         self.numPlot = QLineEdit(str(30))
         self.numPlot.setFixedSize(90, 30)
         l.addWidget(self.numPlot)
+        l.addWidget(QLabel('x:'))
+        self.xmin = QLineEdit('')
+        self.xmin.setFixedSize(30, 30)
+        l.addWidget(self.xmin)
+        l.addWidget(QLabel('..'))
+        self.xmax = QLineEdit('')
+        self.xmax.setFixedSize(30, 30)
+        l.addWidget(self.xmax)
+        l.addWidget(QLabel('y:'))
+        self.ymin = QLineEdit('')
+        self.ymin.setFixedSize(30, 30)
+        l.addWidget(self.ymin)
+        l.addWidget(QLabel('..'))
+        self.ymax = QLineEdit('')
+        self.ymax.setFixedSize(30, 30)
+        l.addWidget(self.ymax)
+        l.addStretch(1)
+        layout.addLayout(l)
+
+        l = QHBoxLayout(self)
         self.plot = QPushButton('Plot')
         self.plot.clicked[bool].connect(self.plotIt)
         self.plot.setFixedSize(90, 30)
@@ -550,6 +570,12 @@ class gridParsWidget(QWidget):
     def compareIt(self):
         self.parent.H2_systems.table.compare()
         self.interpolateIt()
+        grid = self.parent.H2.grid
+        x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
+        self.xmin.setText(str(np.min(x)))
+        self.xmax.setText(str(np.max(x)))
+        self.ymin.setText(str(np.min(y)))
+        self.ymax.setText(str(np.max(y)))
 
     def interpolateIt(self):
         grid = self.parent.H2.grid
@@ -579,27 +605,23 @@ class gridParsWidget(QWidget):
                 #rbf = Rbf(x,y,z,function='multiquadric',smooth=0.2)
 
 
-    def regridIt(self, kind='fast', save=True):
+    def regridIt(self, kind='accurate', save=True):
         grid = self.parent.H2.grid
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
         x1, y1 = x, y # copy for save
-        x, y = np.linspace(np.min(x), np.max(x), num), np.linspace(np.min(y), np.max(y), num)
+        x, y = np.linspace(float(self.xmin.text()), float(self.xmax.text()), num), np.linspace(float(self.ymin.text()), float(self.ymax.text()), num)
         X, Y = np.meshgrid(x, y)
         z = np.zeros_like(X)
         sp = grid['cols'][0].keys()
-        print(sp)
         sp = [s for s in sp if int(s[3:]) in self.H2levels]
-        print(sp)
         species = {}
         for s in sp:
             v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
-            #if kind == 'fast':
-            #    v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(
-            #        v1.plus ** 2 + float(self.addSyst.text()) ** 2)
-            #elif kind == 'accurate':
-            v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
-            #v1.plus, v1.minus = float(self.addSyst.text()), float(self.addSyst.text())
+            if kind == 'fast':
+                v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(v1.plus ** 2 + float(self.addSyst.text()) ** 2)
+            elif kind == 'accurate':
+                v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
             species[s] = v1
         if save:
             cols = {}
@@ -612,9 +634,7 @@ class gridParsWidget(QWidget):
                     if v.type == 'm':
                         lnL += v.lnL(self.cols[s](xi, yi))
                         cols[s][k, i] = self.cols[s](xi, yi)
-                        #print(xi,yi, self.cols[s](xi, yi),v.log(), v.lnL(self.cols[s](xi, yi)))
                 z[k, i] = lnL
-                #print('lnL(i,k) = ',lnL)
         self.x_, self.y_, self.z_ = x, y, z
 
         if save:
@@ -662,8 +682,8 @@ class H2viewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.H2 = H2_exc(folder='data_z0.5')
-        #self.H2 = H2_exc(folder='data_01_temp2')
+        #self.H2 = H2_exc(folder='data_z0.3')
+        self.H2 = H2_exc(folder='data_01_temp', H2database='all')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
