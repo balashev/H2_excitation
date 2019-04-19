@@ -22,7 +22,7 @@ def column(matrix, i):
     if i == 2 or (isinstance(i, str) and i[0] == 'm'):
         return np.asarray([row.minus for row in matrix])
 
-H2_energy = np.genfromtxt('energy_X_H2.dat', dtype=[('nu', 'i2'), ('j', 'i2'), ('e', 'f8')],
+H2_energy = np.genfromtxt(os.path.dirname(os.path.realpath(__file__)) + r'\energy_X_H2.dat', dtype=[('nu', 'i2'), ('j', 'i2'), ('e', 'f8')],
                           unpack=True, skip_header=3, comments='#')
 H2energy = np.zeros([max(H2_energy['nu']) + 1, max(H2_energy['j']) + 1])
 for e in H2_energy:
@@ -34,7 +34,7 @@ spcode = {'H': 'n_h', 'H2': 'n_h2', 'H+': 'n_hp',
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'H2j8': 'pop_h2_v0_j8', 'H2j9': 'pop_h2_v0_j9', 'H2j10': 'pop_h2_v0_j10',
-          'D': 'n_d', 'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
+          'D': 'n_d', 'D+': 'n_dp', 'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co',
           'Cj0': 'pop_c_el3p_j0', 'Cj1': 'pop_c_el3p_j1', 'Cj2': 'pop_c_el3p_j2',
           'NH2': 'cd_prof_h2',  'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1','NH2j2': 'cd_lev_prof_h2_v0_j2','NH2j3': 'cd_lev_prof_h2_v0_j3','NH2j4': 'cd_lev_prof_h2_v0_j4','NH2j5': 'cd_lev_prof_h2_v0_j5',
@@ -100,12 +100,13 @@ class plot(pg.PlotWidget):
 
 
 class model():
-    def __init__(self, folder='', name=None, filename=None, species=[], show_summary=True, show_meta=False):
+    def __init__(self, folder='', name=None, filename=None, species=[], show_summary=True, show_meta=False, fastread=True):
         self.folder = folder
         self.sp = {}
         self.species = species
         self.filename = filename
         self.initpardict()
+        self.fastread = fastread
         if filename is not None:
             if name is None:
                 name = filename.replace('.hdf5', '')
@@ -127,7 +128,7 @@ class model():
         for i in range(11):
             self.pardict['pop_h2_v0_j'+str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 9+i, float)
 
-    def read(self, show_meta=False, show_summary=True, fast=True):
+    def read(self, show_meta=False, show_summary=True, fast=None):
         """
         Read model data from hdf5 file
 
@@ -139,13 +140,15 @@ class model():
         """
         self.file = h5py.File(self.folder + self.filename, 'r')
 
-        self.fastread = fast
+        if fast is not None:
+            self.fastread = fast
 
         # >>> model input parameters
         self.me = self.par('metal')
         self.P = self.par('gas_pressure_input')
         self.n0 = self.par('proton_density_input')
         self.uv = self.par('radm_ini')
+        self.zeta = self.par('zeta')
 
         # >>> profile of physical quantities
         self.x = self.par('distance')
@@ -170,9 +173,10 @@ class model():
             self.showMetadata()
 
         self.file.close()
+        self.file = None
 
         if show_summary:
-            self.showSummary()
+            self.show_summary()
 
     def par(self, par=None):
         """
@@ -184,6 +188,9 @@ class model():
         :return: x
             - x             :  corresponding data (string, number, array) correspond to the parameter
         """
+        if self.file == None:
+            self.file = h5py.File(self.folder + self.filename, 'r')
+
         meta = self.file['Metadata/Metadata']
         if par is not None:
             if self.fastread and par in self.pardict:
@@ -230,12 +237,30 @@ class model():
 
         self.species = species
 
-    def showSummary(self, pars=['me', 'n', 'uv']):
+    def show_summary(self, pars=['me', 'n', 'uv'], output=False):
         print('model: ' + self.name)
-        #print('me', ' : ', getattr(self, 'me'))
-        for p in pars:
-            print(p, ' : ', getattr(self, p))
-            #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
+        if output:
+            f = open(self.name+'dat', 'w')
+        if 'all' in pars:
+            self.file = h5py.File(self.folder + self.filename, 'r')
+            meta = self.file['Metadata/Metadata']
+            for ind in np.where(meta[:, 0] == b'/Parameters')[0]:
+                attr = meta[ind, 0].decode() + '/' + meta[ind, 1].decode()
+                typ = {'string': str, 'real': float, 'integer': int}[meta[ind, 5].decode()]
+                #if len(x) == 1:
+                print(meta[ind, 4].decode(), ' : ', typ(self.file[attr][:, int(meta[ind, 2].decode())][0].decode()))
+                if output:
+                    f.write(meta[ind, 4].decode() + ': ' + self.file[attr][:, int(meta[ind, 2].decode())][0].decode() + '\n')
+            self.file.close()
+        else:
+            for p in pars:
+                if hasattr(self, p):
+                    print(p, ' : ', getattr(self, p))
+                else:
+                    print(p, ' : ', self.par(p))
+                #print("{0:s} : {1:.2f}".format(p, getattr(self, p)))
+        if output:
+            f.close()
 
     def plot_model(self, parx='x', pars=['tgas', 'n', 'av'], species=None, logx=True, logy=True, ax=None, legend=True, limit=None):
         """
