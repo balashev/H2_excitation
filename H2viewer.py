@@ -1,4 +1,6 @@
+from astropy.io import ascii
 from functools import partial
+from io import StringIO
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import pickle
@@ -14,6 +16,7 @@ sys.path.append('C:/science/python')
 from H2_exc import *
 from spectro.stats import distr2d
 from spectro.a_unc import a
+from spectro.pyratio import pyratio
 import copy
 
 class image():
@@ -92,15 +95,21 @@ class plotExc(pg.PlotWidget):
     def initstatus(self):
         pass
 
-    def add(self, name, add, species=[]):
+    def getatomic(self, species, levels=[0, 1, 2]):
+        if species == 'H2':
+            return [H2energy[0, i] for i in levels], [stat_H2[i] for i in levels]
+        elif species == 'CI':
+            return [CIenergy[i] for i in levels], [stat_CI[i] for i in levels]
+
+    def add(self, name, add):
         if add:
+            species = str(self.parent.grid_pars.species.currentText())
             q = self.parent.H2.comp(name)
-            if species is None or len(species) == 0:
-                sp = [s for s in q.e.keys() if 'H2j' in s]
+            sp = [s for s in q.e.keys() if species+'j' in s]
             j = np.sort([int(s[3:]) for s in sp if 'v' not in s])
-            x = [H2energy[0, i] for i in j]
-            y = [q.e['H2j' + str(i)].col / stat[i] for i in j]
-            typ = [q.e['H2j' + str(i)].col.type for i in j]
+            x, stat = self.getatomic(species, levels=j)
+            y = [q.e[species+'j' + str(i)].col / stat[i] for i in j]
+            typ = [q.e[species+'j' + str(i)].col.type for i in j]
             self.view[name] = [pg.ErrorBarItem(x=np.asarray(x), y=column(y, 'v'), top=column(y, 'p'), bottom=column(y, 'm'), beam=2),
                                pg.ScatterPlotItem(x, column(y, 'v'), symbol='o', size=15)]
             self.vb.addItem(self.view[name][0])
@@ -118,10 +127,11 @@ class plotExc(pg.PlotWidget):
 
     def add_model(self, name, add=True):
         if add:
+            species = str(self.parent.grid_pars.species.currentText())
             for ind, m in enumerate(self.parent.H2.listofmodels(name)):
                 j = np.sort([int(s[3:]) for s in m.cols.keys()])
-                x = [H2energy[0, i] for i in j]
-                mod = [m.cols['H2j'+str(i)] - np.log10(stat[i]) for i in j]
+                x, stat = self.getatomic(species, levels=j)
+                mod = [m.cols[species+'j'+str(i)] - np.log10(stat[i]) for i in j]
             self.models[name] = pg.PlotCurveItem(x, mod)
             self.vb.addItem(self.models[name])
             self.legend_model.addItem(self.models[name], name)
@@ -136,11 +146,12 @@ class plotExc(pg.PlotWidget):
 
     def add_temp(self, cols=None, pars=None, add=True):
         if add:
+            species = str(self.parent.grid_pars.species.currentText())
             j = np.sort([int(s[3:]) for s in cols.keys()])
-            x = [H2energy[0, i] for i in j]
-            mod = [cols['H2j'+str(i)] - np.log10(stat[i]) for i in j]
+            x, stat = self.getatomic(species, levels=j)
+            mod = [cols[species+'j'+str(i)] - np.log10(stat[i]) for i in j]
             if 1:
-                print(cols['H2j'+str(i)] for i in j)
+                print(cols[species+'j'+str(i)] for i in j)
                 grid = self.parent.H2.grid
                 species = {}
                 sp = grid['cols'][0].keys()
@@ -172,7 +183,6 @@ class plotExc(pg.PlotWidget):
             except:
                 pass
 
-
     def redraw(self):
         for i, v in enumerate(self.view.values()):
             v[1].setBrush(pg.mkBrush(cm.rainbow(0.01 + 0.98 * i / len(self.view), bytes=True)[:3] + (255,)))
@@ -200,10 +210,18 @@ class textLabel(pg.TextItem):
     def plot_model(self):
         print(self.parent.parent.H2.grid['NH2tot'])
         m = self.parent.parent.H2.listofmodels(self.name)[0]
-        m.plot_model(parx='x', pars=['tgas', 'n'],
-                     species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'Cj0', 'Cj1', 'Cj2'],
-                              ['NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5']],
-                     logx=True, logy=True, limit={'NH2': 10**self.parent.parent.H2.grid['NH2tot'] / 2 })
+        print(self.parent.parent.grid_pars.plot_model_set.currentText())
+        if self.parent.parent.grid_pars.plot_model_set.currentText() == 'H2+CI':
+            m.plot_model(parx='x', pars=['tgas', 'n'],
+                         species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2'],
+                                  ['NH', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5']],
+                         logx=True, logy=True, limit={'NH2': 10**self.parent.parent.H2.grid['NH2tot'] / 2 })
+        if self.parent.parent.grid_pars.plot_model_set.currentText() == 'OH':
+            m.plot_model(parx='h2', pars=['tgas', 'n'],
+                         species=[['H', 'H+', 'H2', 'OH'],
+                                  ['NH/NH2', 'NOH/NH2']],
+                         logx=True, logy=True, limit={'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / 2})
+
         plt.show()
 
     def mouseClickEvent(self, ev):
@@ -327,7 +345,7 @@ class QSOlistTable(pg.TableWidget):
         self.resize(w, self.size().height())
         self.setSortingEnabled(False)
 
-    def compare(self):
+    def compare(self, species='H2'):
         grid = self.parent.parent.grid_pars.pars
         syst = float(self.parent.parent.grid_pars.addSyst.text()) if self.parent.parent.grid_pars.addSyst.text().strip() != '' else 0
         pars = [list(grid.keys())[list(grid.values()).index('x')],
@@ -340,7 +358,9 @@ class QSOlistTable(pg.TableWidget):
         for idx in self.selectedIndexes():
             if idx.column() == 0:
                 name = self.cell_value('name')
-                self.parent.parent.H2.comparegrid(name, pars=pars, fixed=fixed, syst=syst, plot=False, levels=self.parent.parent.grid_pars.H2levels)
+                self.parent.parent.H2.comparegrid(name, species=species, pars=pars, fixed=fixed, syst=syst, plot=False,
+                                                  levels=self.parent.parent.grid_pars.H2levels,
+                                                  others=self.parent.parent.grid_pars.othermode.currentText())
                 grid = self.parent.parent.H2.grid
                 self.parent.parent.H2.grid['name'] = name
                 print('grid', grid['uv'], grid['n0'], grid['lnL'])
@@ -468,7 +488,7 @@ class gridParsWidget(QWidget):
         self.parent = parent
         #self.resize(700, 900)
         #self.move(400, 100)
-        self.pars = {'n0': 'x', 'uv': 'y', 'me': 'fixed'}
+        self.pars = {'n0': 'x', 'uv': 'y', 'Z': 'fixed'}
         self.parent.H2.setgrid(pars=list(self.pars.keys()), show=False)
         self.cols, self.x_, self.y_, self.z_ = None, None, None, None
 
@@ -508,11 +528,22 @@ class gridParsWidget(QWidget):
         self.compare.clicked[bool].connect(self.compareIt)
         self.compare.setFixedSize(90, 30)
         l.addWidget(self.compare)
+        self.species = QComboBox(self)
+        self.species.setFixedSize(50, 25)
+        self.species.addItems(['H2', 'CI'])
+        self.species.setCurrentIndex(0)
+        l.addWidget(self.species)
         self.H2levels = np.arange(6)
         self.levels = QLineEdit(" ".join([str(i) for i in self.H2levels]))
         self.levels.setFixedSize(90, 30)
         self.levels.editingFinished.connect(self.setLevels)
         l.addWidget(self.levels)
+        l.addWidget(QLabel('others:'))
+        self.othermode = QComboBox(self)
+        self.othermode.setFixedSize(70, 25)
+        self.othermode.addItems(['ignore', 'lower', 'upper'])
+        self.othermode.setCurrentIndex(0)
+        l.addWidget(self.othermode)
         l.addStretch(1)
         layout.addLayout(l)
 
@@ -521,7 +552,7 @@ class gridParsWidget(QWidget):
         self.refine.clicked[bool].connect(partial(self.regridIt, kind='accurate'))
         self.refine.setFixedSize(90, 30)
         l.addWidget(self.refine)
-        self.numPlot = QLineEdit(str(30))
+        self.numPlot = QLineEdit(str(100))
         self.numPlot.setFixedSize(90, 30)
         l.addWidget(self.numPlot)
         l.addWidget(QLabel('x:'))
@@ -553,6 +584,19 @@ class gridParsWidget(QWidget):
         self.export.setFixedSize(90, 30)
         l.addWidget(self.export)
         l.addStretch(1)
+        self.export_table = QPushButton('Table')
+        self.export_table.clicked[bool].connect(self.tableIt)
+        self.export_table.setFixedSize(90, 30)
+        l.addWidget(self.export_table)
+        layout.addLayout(l)
+
+        l = QHBoxLayout(self)
+        self.plot_model_set = QComboBox(self)
+        self.plot_model_set.setFixedSize(80, 25)
+        self.plot_model_set.addItems(['H2+CI', 'OH'])
+        self.plot_model_set.setCurrentIndex(0)
+        l.addWidget(self.plot_model_set)
+        l.addStretch(1)
         layout.addLayout(l)
 
         layout.addStretch(1)
@@ -568,7 +612,7 @@ class gridParsWidget(QWidget):
             pass
 
     def compareIt(self):
-        self.parent.H2_systems.table.compare()
+        self.parent.H2_systems.table.compare(species=str(self.species.currentText()))
         self.interpolateIt()
         grid = self.parent.H2.grid
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
@@ -622,7 +666,10 @@ class gridParsWidget(QWidget):
                 v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(v1.plus ** 2 + float(self.addSyst.text()) ** 2)
             elif kind == 'accurate':
                 v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
-            species[s] = v1
+            if str(self.species.currentText()) == 'H2':
+                species[s] = v1
+            elif str(self.species.currentText()) == 'CI':
+                species[s] = v1 / self.parent.H2.comp(grid['name']).e['CIj0'].col.log()
         if save:
             cols = {}
             for s in self.cols.keys():
@@ -632,8 +679,13 @@ class gridParsWidget(QWidget):
                 lnL = 0
                 for s, v in species.items():
                     if v.type == 'm':
-                        lnL += v.lnL(self.cols[s](xi, yi))
-                        cols[s][k, i] = self.cols[s](xi, yi)
+                        if str(self.species.currentText()) == 'H2':
+                            lnL += v.lnL(self.cols[s](xi, yi))
+                            cols[s][k, i] = self.cols[s](xi, yi)
+                        elif str(self.species.currentText()) == 'CI':
+                            cols[s][k, i] = self.cols[s](xi, yi) - self.cols['CIj0'](xi, yi)
+                            lnL += v.lnL(cols[s][k, i])
+
                 z[k, i] = lnL
         self.x_, self.y_, self.z_ = x, y, z
 
@@ -664,12 +716,41 @@ class gridParsWidget(QWidget):
             d.plot(color=None)
             plt.show()
 
-
     def exportIt(self):
-        with open('output/{:s}.pkl'.format(self.parent.H2.grid['name']), 'wb') as f:
+        with open('output/{0:s}_{1:s}.pkl'.format(self.parent.H2.grid['name'], str(self.species.currentText())), 'wb') as f:
             pickle.dump([self.x_, self.y_, self.z_], f)
         with open('temp/lnL.pkl', 'wb') as f:
             pickle.dump([self.x_, self.y_, self.z_], f)
+
+    def tableIt(self):
+        print(self.parent.plot_reg.mousePoint.x(), self.parent.plot_reg.mousePoint.y())
+        d = [['species', 'observed', 'model']]
+        if self.parent.grid_pars.cols is not None:
+            cols = {}
+            for s in self.parent.H2.grid['cols'][0].keys():
+                cols[s] = self.parent.grid_pars.cols[s](self.parent.plot_reg.mousePoint.x(), self.parent.plot_reg.mousePoint.y())
+                #print(self.mousePoint.x(), self.mousePoint.y(), s, cols[s])
+        q = self.parent.H2.H2.getcomp(self.parent.H2.grid['name'])
+        for e in ['H2j0', 'H2j1', 'H2j2']:
+            d.append([e.replace('H2', 'H$_2$ ').replace('j', 'J='), q.e[e].col.latex(f=2), '{:5.2f}'.format(cols[e])])
+        pr = pyratio(z=q.z)
+        n = [q.e['CIj0'].col, q.e['CIj1'].col, q.e['CIj2'].col]
+        pr.add_spec('CI', n)
+        pr.set_pars(['T', 'n', 'f', 'UV'])
+        pr.pars['UV'].value = self.parent.plot_reg.mousePoint.y()
+        pr.pars['n'].value = self.parent.plot_reg.mousePoint.x() - 0.3
+        pr.set_prior('f', a(0, 0, 0))
+        pr.set_prior('T', a(q.e['T01'].col.log().val, 0, 0))
+        p = pr.predict(name='CI', level=-1, logN=n[0]+n[1]+n[2])
+        for i, e in enumerate(['CIj0', 'CIj1', 'CIj2']):
+            d.append([e.replace('j0', '').replace('j1', '*').replace('j2', '**'), q.e[e].col.log().latex(f=2), '{:5.2f}$^a$'.format(p[i].val)])
+
+        print(d)
+        output = StringIO()
+        ascii.write([list(i) for i in zip(*d[1:])], output, names=d[0], format='latex')
+        table = output.getvalue()
+        print(table)
+        output.close()
 
     def setGridView(self, par, b):
         self.pars[par] = b
@@ -683,7 +764,7 @@ class H2viewer(QMainWindow):
     def __init__(self):
         super().__init__()
         #self.H2 = H2_exc(folder='data_z0.3')
-        self.H2 = H2_exc(folder='data_01_temp', H2database='all')
+        self.H2 = H2_exc(folder='data_01_temp2', H2database='all')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()
