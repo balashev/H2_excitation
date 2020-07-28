@@ -1,8 +1,11 @@
 from astropy.io import ascii
+import astropy.constants as ac
+from astropy.cosmology import FlatLambdaCDM
 from functools import partial
 from io import StringIO
 from matplotlib import cm
 import matplotlib.pyplot as plt
+import numpy as np
 import pickle
 from PyQt5.QtCore import (Qt, )
 from PyQt5.QtGui import (QFont, )
@@ -10,7 +13,8 @@ from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, 
                              QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox,
                              QRadioButton, QButtonGroup, QComboBox, QTableView, QLineEdit)
 import pyqtgraph as pg
-from scipy.interpolate import interp2d, RectBivariateSpline, Rbf
+from scipy.interpolate import interp1d, interp2d, RectBivariateSpline, Rbf
+from scipy.optimize import bisect
 import sys
 sys.path.append('C:/science/python')
 from H2_exc import *
@@ -208,19 +212,19 @@ class textLabel(pg.TextItem):
         self.parent.parent.plot_exc.add_model(self.name, add=self.active)
 
     def plot_model(self):
-        print(self.parent.parent.H2.grid['NH2tot'])
+        print(self.parent.parent.H2.grid['NH2tot'], (int(self.parent.parent.grid_pars.sides.isChecked()) + 1))
         m = self.parent.parent.H2.listofmodels(self.name)[0]
         print(self.parent.parent.grid_pars.plot_model_set.currentText())
         if self.parent.parent.grid_pars.plot_model_set.currentText() == 'H2+CI':
-            m.plot_model(parx='x', pars=['tgas', 'n'],
-                         species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2'],
+            m.plot_model(parx='x', pars=['tgas', 'n', 'av'],
+                         species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2', 'SiIIj0', 'SiIIj1'],
                                   ['NH', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5']],
-                         logx=True, logy=True, limit={'NH2': 10**self.parent.parent.H2.grid['NH2tot'] / 2 })
+                         logx=True, logy=True, limit={'NH2': 10**self.parent.parent.H2.grid['NH2tot'] / (int(self.parent.parent.grid_pars.sides.isChecked()) + 1) })
         if self.parent.parent.grid_pars.plot_model_set.currentText() == 'OH':
             m.plot_model(parx='h2', pars=['tgas', 'n'],
                          species=[['H', 'H+', 'H2', 'OH'],
                                   ['NH/NH2', 'NOH/NH2']],
-                         logx=True, logy=True, limit={'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / 2})
+                         logx=True, logy=True, limit={'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / (int(self.parent.parent.grid_pars.sides.isChecked()) + 1)})
 
         plt.show()
 
@@ -251,6 +255,16 @@ class plotGrid(pg.PlotWidget):
         map = pg.ColorMap(np.linspace(0, 1, cdict.N), cmap, mode='rgb')
         self.colormap = map.getLookupTable(0.0, 1.0, 256, alpha=False)
 
+        if 0:
+            self.uv_axis = pg.ViewBox(enableMenu=False)
+            self.uv_axis.setXLink(self)  # this will synchronize zooming along the y axis
+            self.showAxis('right')
+            self.scene().addItem(self.uv_axis)
+            self.uv_axis.setGeometry(self.getPlotItem().sceneBoundingRect())
+            self.getAxis('right').setStyle(tickLength=-15, tickTextOffset=2, stopAxisAtTick=(False, False))
+            self.getAxis('right').linkToView(self.uv_axis)
+            self.getPlotItem().sigRangeChanged.connect(self.updateUVAxis)
+
     def initstatus(self):
         self.s_status = True
         self.selected_point = None
@@ -278,26 +292,53 @@ class plotGrid(pg.PlotWidget):
             self.image.setLevels(self.grid.levels)
             self.vb.addItem(self.image)
 
-    def mousePressEvent(self, event):
-        super(plotGrid, self).mousePressEvent(event)
-        if event.button() == Qt.LeftButton:
-            if self.s_status:
-                name = self.parent.H2.grid['name']
+    def updateUVAxis(self):
+        self.uv_axis.setGeometry(self.getPlotItem().sceneBoundingRect())
+        self.uv_axis.linkedViewChanged(self.getViewBox(), self.uv_axis.YAxis)
+        MainPlotXMin, MainPlotXMax = self.viewRange()[1]
+        print(self.viewRange())
+        scale = {'Mathis': 0, 'Draine': np.log10(1.39), 'Habing': np.log10(0.81)}
+        if self.parent.grid_pars.uv_type.currentText() in ['Mathis', 'Draine', 'Habing']:
+            AuxPlotXMin, AuxPlotXMax = MainPlotXMin + scale[self.parent.grid_pars.uv_type.currentText()], MainPlotXMax + self.parent.grid_pars.uv_type.currentText()
+        elif self.parent.grid_pars.uv_type.currentText() == 'AGN':
+            AuxPlotXMin, AuxPlotXMax = -0.5 * MainPlotXMin, -0.5 * MainPlotXMax
+        print(AuxPlotXMin, AuxPlotXMax)
+        self.uv_axis.setYRange(AuxPlotXMax, AuxPlotXMin, padding=0)
+
+    def mousePressEvent(self, event, pos=None):
+        print(pos)
+        if pos is None:
+            super(plotGrid, self).mousePressEvent(event)
+            if event.button() == Qt.LeftButton:
                 self.mousePoint = self.vb.mapSceneToView(event.pos())
-                print(self.mousePoint.x(), self.mousePoint.y())
-                if self.parent.grid_pars.cols is not None:
-                    cols = {}
-                    sp = self.parent.H2.grid['cols'][0].keys()
-                    lnL = 0
-                    for s in sp:
-                        v = self.parent.H2.comp(name).e[s].col
-                        cols[s] = self.parent.grid_pars.cols[s](self.mousePoint.x(), self.mousePoint.y())
-                        print(self.mousePoint.x(), self.mousePoint.y(),s, cols[s])
-                        v1 = v * a(0, 0.2, 0.2, 'l')
-                        if v.type == 'm':
-                            lnL += v1.lnL(cols[s])
-                    self.parent.plot_exc.add_temp(cols, add=False)
-                    self.parent.plot_exc.add_temp(cols, pars=[self.mousePoint.x(), self.mousePoint.y()])
+                self.x, self.y = self.mousePoint.x(), self.mousePoint.y()
+        else:
+            self.x, self.y = pos
+        print(self.x, self.y)
+        if self.s_status:
+            name = self.parent.H2.grid['name']
+            if self.parent.grid_pars.uv_type.currentText() == 'AGN':
+                grid = self.parent.grid_pars.pars
+                pars = [list(grid.keys())[list(grid.values()).index('x')], list(grid.keys())[list(grid.values()).index('y')]]
+                ind = pars.index('uv')
+                print(self.parent.grid_pars.rescale)
+                if ind == 0:
+                    self.x = np.log10(self.parent.grid_pars.rescale / 10 ** (self.x * 2))
+                else:
+                    self.y = np.log10(self.parent.grid_pars.rescale / 10 ** (self.y * 2))
+            if self.parent.grid_pars.cols is not None:
+                cols = {}
+                sp = self.parent.H2.grid['cols'][0].keys()
+                lnL = 0
+                for s in sp:
+                    v = self.parent.H2.comp(name).e[s].col
+                    cols[s] = self.parent.grid_pars.cols[s](self.x, self.y)
+                    print(s, cols[s])
+                    v1 = v * a(0, 0.2, 0.2, 'l')
+                    if v.type == 'm':
+                        lnL += v1.lnL(cols[s])
+                self.parent.plot_exc.add_temp(cols, add=False)
+                self.parent.plot_exc.add_temp(cols, pars=[self.x, self.y])
 
     def keyPressEvent(self, event):
         super(plotGrid, self).keyPressEvent(event)
@@ -348,6 +389,7 @@ class QSOlistTable(pg.TableWidget):
     def compare(self, species='H2'):
         grid = self.parent.parent.grid_pars.pars
         syst = float(self.parent.parent.grid_pars.addSyst.text()) if self.parent.parent.grid_pars.addSyst.text().strip() != '' else 0
+        syst_factor = float(self.parent.parent.grid_pars.multSyst.text()) if self.parent.parent.grid_pars.multSyst.text().strip() != '' else 1
         pars = [list(grid.keys())[list(grid.values()).index('x')],
                 list(grid.keys())[list(grid.values()).index('y')]]
         fixed = list(grid.keys())[list(grid.values()).index('fixed')]
@@ -358,12 +400,13 @@ class QSOlistTable(pg.TableWidget):
         for idx in self.selectedIndexes():
             if idx.column() == 0:
                 name = self.cell_value('name')
-                self.parent.parent.H2.comparegrid(name, species=species, pars=pars, fixed=fixed, syst=syst, plot=False,
+                self.parent.parent.H2.comparegrid(name, species=species, pars=pars, fixed=fixed, syst=syst, syst_factor=syst_factor, plot=False,
                                                   levels=self.parent.parent.grid_pars.H2levels,
-                                                  others=self.parent.parent.grid_pars.othermode.currentText())
+                                                  others=self.parent.parent.grid_pars.othermode.currentText(),
+                                                  sides=int(self.parent.parent.grid_pars.sides.isChecked())+1)
                 grid = self.parent.parent.H2.grid
                 self.parent.parent.H2.grid['name'] = name
-                print('grid', grid['uv'], grid['n0'], grid['lnL'])
+                #print('grid', grid['uv'], grid['n0'], grid['lnL'])
                 self.parent.parent.plot_reg.set_data(x=grid[pars[0]], y=grid[pars[1]], z=grid['lnL'])
                 self.parent.parent.plot_reg.setLabels(bottom='log('+pars[0]+')', left='log('+pars[1]+')')
                 #self.pos = [self.x[0] - (self.x[1] - self.x[0]) / 2, self.y[0] - (self.y[1] - self.y[0]) / 2]
@@ -488,7 +531,7 @@ class gridParsWidget(QWidget):
         self.parent = parent
         #self.resize(700, 900)
         #self.move(400, 100)
-        self.pars = {'n0': 'x', 'uv': 'y', 'Z': 'fixed'}
+        self.pars = {'n0': 'x', 'P': 'disable', 'uv': 'y', 'Z': 'fixed'}
         self.parent.H2.setgrid(pars=list(self.pars.keys()), show=False)
         self.cols, self.x_, self.y_, self.z_ = None, None, None, None
 
@@ -496,10 +539,11 @@ class gridParsWidget(QWidget):
         layout.addWidget(QLabel('grid parameters:'))
 
         for n in self.pars.keys():
+            print(n, self.parent.H2.grid[n])
             l = QHBoxLayout(self)
             l.addWidget(QLabel((n + ': ')[:3]))
             self.group = QButtonGroup(self)
-            for b in ('x', 'y', 'z', 'fixed'):
+            for b in ('x', 'y', 'disable', 'fixed'):
                 setattr(self, b, QCheckBox(b, checkable=True))
                 getattr(self, b).clicked[bool].connect(partial(self.setGridView, par=n, b=b))
                 l.addWidget(getattr(self, b))
@@ -507,19 +551,41 @@ class gridParsWidget(QWidget):
             getattr(self, self.pars[n]).setChecked(True)
             setattr(self, n + '_val', QComboBox(self))
             getattr(self, n + '_val').setFixedSize(80, 25)
-            getattr(self, n + '_val').addItems(np.append([''], np.asarray(np.sort(np.unique(self.parent.H2.grid[n])), dtype=str)))
-            if self.pars[n] is 'fixed':
-                getattr(self, n + '_val').setCurrentIndex(1)
+            if None not in self.parent.H2.grid[n]:
+                getattr(self, n + '_val').addItems(np.append([''], np.asarray(np.sort(np.unique(self.parent.H2.grid[n])), dtype=str)))
+                if self.pars[n] is 'fixed':
+                    getattr(self, n + '_val').setCurrentIndex(1)
+            else:
+                self.pars[n] = 'disable'
+                getattr(self, self.pars[n]).setChecked(True)
+                for b in ('x', 'y', 'disable', 'fixed'):
+                    getattr(self, b).setEnabled(False)
             l.addWidget(getattr(self, n + '_val'))
+            if n == 'uv':
+                setattr(self, n + '_type', QComboBox(self))
+                getattr(self, n + '_type').setFixedSize(80, 25)
+                getattr(self, n + '_type').addItems(['Habing', 'Draine', 'Mathis', 'AGN'])
+                getattr(self, n + '_type').setCurrentIndex(2)
+                getattr(self, n + '_type').currentIndexChanged[str].connect(self.changeUV)
+                l.addWidget(getattr(self, n + '_type'))
             l.addStretch(1)
             layout.addLayout(l)
 
         l = QHBoxLayout(self)
-        l.addWidget(QLabel('add systematic unc.:'))
+        l.addWidget(QLabel('add systematic unc.: +'))
         self.addSyst = QLineEdit()
         self.addSyst.setText(str(0.2))
-        self.addSyst.setFixedSize(90, 30)
+        self.addSyst.setFixedSize(40, 30)
         l.addWidget(self.addSyst)
+        l.addWidget(QLabel(' or x by'))
+        self.multSyst = QLineEdit()
+        self.multSyst.setText('')
+        self.multSyst.setFixedSize(40, 30)
+        l.addWidget(self.multSyst)
+        self.sides = QCheckBox('both sides')
+        self.sides.setFixedSize(90, 30)
+        self.sides.setChecked(True)
+        l.addWidget(self.sides)
         l.addStretch(1)
         layout.addLayout(l)
 
@@ -584,6 +650,10 @@ class gridParsWidget(QWidget):
         self.export.setFixedSize(90, 30)
         l.addWidget(self.export)
         l.addStretch(1)
+        self.best_fit = QPushButton('Best')
+        self.best_fit.clicked[bool].connect(self.bestIt)
+        self.best_fit.setFixedSize(60, 30)
+        l.addWidget(self.best_fit)
         self.export_table = QPushButton('Table')
         self.export_table.clicked[bool].connect(self.tableIt)
         self.export_table.setFixedSize(90, 30)
@@ -623,6 +693,7 @@ class gridParsWidget(QWidget):
 
     def interpolateIt(self):
         grid = self.parent.H2.grid
+        #print(grid, list(self.pars.keys())[list(self.pars.values()).index('x')], list(self.pars.keys())[list(self.pars.values()).index('y')])
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
         sp = grid['cols'][0].keys()
         self.cols = {}
@@ -650,6 +721,8 @@ class gridParsWidget(QWidget):
 
 
     def regridIt(self, kind='accurate', save=True):
+        syst = float(self.addSyst.text()) if self.addSyst.text().strip() != '' else 0
+        syst_factor = float(self.multSyst.text()) if self.multSyst.text().strip() != '' else 1
         grid = self.parent.H2.grid
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
@@ -661,11 +734,12 @@ class gridParsWidget(QWidget):
         sp = [s for s in sp if int(s[3:]) in self.H2levels]
         species = {}
         for s in sp:
-            v1 = self.parent.H2.comp(grid['name']).e[s].col.log().copy()
+            self.parent.H2.comp(grid['name']).e[s].col.log()
+            v1 = a(self.parent.H2.comp(grid['name']).e[s].col.log().val, self.parent.H2.comp(grid['name']).e[s].col.log().plus * syst_factor, self.parent.H2.comp(grid['name']).e[s].col.log().minus * syst_factor)
             if kind == 'fast':
-                v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + float(self.addSyst.text()) ** 2), np.sqrt(v1.plus ** 2 + float(self.addSyst.text()) ** 2)
+                v1.minus, v1.plus = np.sqrt(v1.minus ** 2 + syst ** 2), np.sqrt(v1.plus ** 2 + syst ** 2)
             elif kind == 'accurate':
-                v1 *= a(0, float(self.addSyst.text()), float(self.addSyst.text()), 'l')
+                v1 *= a(0, syst, syst, 'l')
             if str(self.species.currentText()) == 'H2':
                 species[s] = v1
             elif str(self.species.currentText()) == 'CI':
@@ -709,41 +783,53 @@ class gridParsWidget(QWidget):
 
     def plotIt(self):
         if self.x is not None:
-            d = distr2d(x=self.x_, y=self.y_, z=np.exp(self.z_))
+            print(self.uv_type.currentText())
+            data = self.rescaleUV(self.uv_type.currentText(), data={'x': 10**self.x_, 'y': 10**self.y_, 'z': self.z_})
+            #print(data)
+            d = distr2d(x=np.log10(data['x']), y=np.log10(data['y']), z=np.exp(data['z']))
             dx, dy = d.marginalize('y'), d.marginalize('x')
             dx.stats(latex=2, name=list(self.pars.keys())[list(self.pars.values()).index('x')])
             dy.stats(latex=2, name=list(self.pars.keys())[list(self.pars.values()).index('y')])
-            d.plot(color=None)
+            d.plot(color=None, xlabel=data['bottom'], ylabel=data['left'])
             plt.show()
 
     def exportIt(self):
+        data = self.rescaleUV(self.uv_type.currentText(), data={'x': 10 ** self.x_, 'y': 10 ** self.y_, 'z': self.z_})
         with open('output/{0:s}_{1:s}.pkl'.format(self.parent.H2.grid['name'], str(self.species.currentText())), 'wb') as f:
-            pickle.dump([self.x_, self.y_, self.z_], f)
+            pickle.dump([data['x'], data['y'], data['z']], f)
         with open('temp/lnL.pkl', 'wb') as f:
-            pickle.dump([self.x_, self.y_, self.z_], f)
+            pickle.dump([data['x'], data['y'], data['z']], f)
+
+    def bestIt(self):
+        inds = np.where(self.z_ == np.max(self.z_.flatten()))
+        print(self.x_[inds[1][0]], self.y_[inds[0][0]])
+        self.parent.plot_reg.mousePressEvent(None, pos=(self.x_[inds[1][0]], self.y_[inds[0][0]]))
+        #data = self.rescaleUV(self.uv_type.currentText(), data={'x': 10 ** self.x_, 'y': 10 ** self.y_, 'z': self.z_})
 
     def tableIt(self):
-        print(self.parent.plot_reg.mousePoint.x(), self.parent.plot_reg.mousePoint.y())
+        print(self.parent.plot_reg.x, self.parent.plot_reg.y)
         d = [['species', 'observed', 'model']]
         if self.parent.grid_pars.cols is not None:
             cols = {}
             for s in self.parent.H2.grid['cols'][0].keys():
-                cols[s] = self.parent.grid_pars.cols[s](self.parent.plot_reg.mousePoint.x(), self.parent.plot_reg.mousePoint.y())
+                cols[s] = self.parent.grid_pars.cols[s](self.parent.plot_reg.x, self.parent.plot_reg.y)
                 #print(self.mousePoint.x(), self.mousePoint.y(), s, cols[s])
         q = self.parent.H2.H2.getcomp(self.parent.H2.grid['name'])
-        for e in ['H2j0', 'H2j1', 'H2j2']:
-            d.append([e.replace('H2', 'H$_2$ ').replace('j', 'J='), q.e[e].col.latex(f=2), '{:5.2f}'.format(cols[e])])
-        pr = pyratio(z=q.z)
-        n = [q.e['CIj0'].col, q.e['CIj1'].col, q.e['CIj2'].col]
-        pr.add_spec('CI', n)
-        pr.set_pars(['T', 'n', 'f', 'UV'])
-        pr.pars['UV'].value = self.parent.plot_reg.mousePoint.y()
-        pr.pars['n'].value = self.parent.plot_reg.mousePoint.x() - 0.3
-        pr.set_prior('f', a(0, 0, 0))
-        pr.set_prior('T', a(q.e['T01'].col.log().val, 0, 0))
-        p = pr.predict(name='CI', level=-1, logN=n[0]+n[1]+n[2])
-        for i, e in enumerate(['CIj0', 'CIj1', 'CIj2']):
-            d.append([e.replace('j0', '').replace('j1', '*').replace('j2', '**'), q.e[e].col.log().latex(f=2), '{:5.2f}$^a$'.format(p[i].val)])
+        for e in ['H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7']:
+            if e in q.e.keys():
+                d.append([e.replace('H2', 'H$_2$ ').replace('j', 'J='), q.e[e].col.latex(f=2), '{:5.2f}'.format(cols[e])])
+        if 0:
+            pr = pyratio(z=q.z)
+            n = [q.e['CIj0'].col, q.e['CIj1'].col, q.e['CIj2'].col]
+            pr.add_spec('CI', n)
+            pr.set_pars(['T', 'n', 'f', 'UV'])
+            pr.pars['UV'].value = self.parent.plot_reg.y
+            pr.pars['n'].value = self.parent.plot_reg.x - 0.3
+            pr.set_prior('f', a(0, 0, 0))
+            pr.set_prior('T', a(q.e['T01'].col.log().val, 0, 0))
+            p = pr.predict(name='CI', level=-1, logN=n[0]+n[1]+n[2])
+            for i, e in enumerate(['CIj0', 'CIj1', 'CIj2']):
+                d.append([e.replace('j0', '').replace('j1', '*').replace('j2', '**'), q.e[e].col.log().latex(f=2), '{:5.2f}$^a$'.format(p[i].val)])
 
         print(d)
         output = StringIO()
@@ -759,12 +845,88 @@ class gridParsWidget(QWidget):
             self.pars[par] = getattr(self, par + '_val').currentText()
         print(self.pars)
 
-class H2viewer(QMainWindow):
+    def flux_to_mag_solve(self, c, flux, x, b, inter, mag):
+        m = - 2.5 / np.log(10) * (np.arcsinh(flux * 10 ** c * x ** 2 / ac.c.to('Angstrom/s').value / 3.631e-20 / 2 / b) + np.log(b))
+        return mag - np.trapz(m * inter(x), x=x) / np.trapz(inter(x), x=x)
 
+    def UVrescale(self, init='Mathis', agn=None):
+
+        if init == 'Mathis':
+            l = np.linspace(912, 2460, 100)
+            uv = np.zeros_like(l)
+            mask = np.logical_and(912 <= l, l <= 1100)
+            uv[mask] = 1.287e-9 * (l[mask] / 1e4) ** 4.4172
+            mask = np.logical_and(1110 < l, l <= 1340)
+            uv[mask] = 6.825e-13 * (l[mask] / 1e4)
+            mask = np.logical_and(1340 < l, l <= 2460)
+            uv[mask] = 2.373e-14 * (l[mask] / 1e4) ** (-0.6678)
+            uv = interp1d(l, uv / (ac.c.cgs.value / l / 1e-8), bounds_error=0, fill_value=0)
+
+        return np.trapz(agn(l), x=l) / np.trapz(uv(l), x=l)
+
+    def rescaleUV(self, s, data=None):
+        grid = self.parent.grid_pars.pars
+        pars = [list(grid.keys())[list(grid.values()).index('x')], list(grid.keys())[list(grid.values()).index('y')]]
+        grid = self.parent.H2.grid
+        ind = pars.index('uv')
+        ref, labels = ['x', 'y'], ['bottom', 'left']
+        print(pars)
+        d = {}
+        if data == None:
+            data = {'x': grid[pars[0]], 'y': grid[pars[1]], 'z': grid['lnL']}
+        d[ref[np.delete(np.arange(2), ind)[0]]] = data[ref[np.delete(np.arange(2), ind)[0]]]
+        d[labels[np.delete(np.arange(2), ind)[0]]] = 'log(' + pars[np.delete(np.arange(2), ind)[0]] + ')'
+        if s == 'Habing':
+            d[ref[np.delete(np.arange(2), 1 - ind)[0]]] = np.asarray(data[ref[np.delete(np.arange(2), 1 - ind)[0]]]) * 0.81
+            d[labels[np.delete(np.arange(2), 1 - ind)[0]]] = 'log(' + pars[np.delete(np.arange(2), 1 - ind)[0]] + '), Habing'
+        if s == 'Draine':
+            d[ref[np.delete(np.arange(2), 1 - ind)[0]]] = np.asarray(data[ref[np.delete(np.arange(2), 1 - ind)[0]]]) * 1.37
+            d[labels[np.delete(np.arange(2), 1 - ind)[0]]] = 'log(' + pars[np.delete(np.arange(2), 1 - ind)[0]] + '), Draine'
+        if s == 'Mathis':
+            d[ref[np.delete(np.arange(2), 1 - ind)[0]]] = np.asarray(data[ref[np.delete(np.arange(2), 1 - ind)[0]]])
+            d[labels[np.delete(np.arange(2), 1 - ind)[0]]] = 'log(' + pars[np.delete(np.arange(2), 1 - ind)[0]] + '), Mathis'
+        if s == 'AGN':
+            b = {'u': 1.4e-10, 'g': 0.9e-10, 'r': 1.2e-10, 'i': 1.8e-10, 'z': 7.4e-10}
+            fil = np.genfromtxt('sdss_filter_r.dat', skip_header=6, usecols=(0, 1), unpack=True)
+            filter = interp1d(fil[0], fil[1], bounds_error=False, fill_value=0, assume_sorted=True)
+            for idx in self.parent.H2_systems.table.selectedIndexes():
+                if idx.column() == 0:
+                    name = self.parent.H2_systems.table.cell_value('name')
+                    print(name)
+                    qso = self.parent.H2.H2.get(name.split('_')[0])
+                    print(qso.z_em, qso.m['r'])
+                    DL = FlatLambdaCDM(70, 0.3, Tcmb0=2.725, Neff=0).luminosity_distance(qso.z_em).to('cm').value
+                    from astroquery.sdss import SDSS
+                    q = SDSS.get_spectral_template('qso')
+                    x, flux = 10 ** (np.arange(len(q[0][0].data[0])) * 0.0001 + q[0][0].header['CRVAL1']), q[0][0].data[0] * 1e-17
+                    mask = (x * (1 + qso.z_em) > fil[0][0]) * (x * (1 + qso.z_em) < fil[0][-1])
+                    scale = 10 ** bisect(self.flux_to_mag_solve, -25, 25,
+                                         args=(flux[mask], x[mask] * (1 + qso.z_em), b['r'], filter, qso.m['r']))
+                    print(scale)
+                    agn = interp1d(x, scale * flux * (DL / ac.kpc.cgs.value) ** 2 * x ** 2 / 1e8 / ac.c.cgs.value ** 2 * (1 + qso.z_em), bounds_error=0, fill_value='extrapolate')
+                    self.rescale = self.UVrescale(agn=agn)
+
+            d[ref[np.delete(np.arange(2), 1 - ind)[0]]] = np.sqrt(self.rescale / np.asarray(data[ref[np.delete(np.arange(2), 1 - ind)[0]]]))
+            np.savetxt('output/UVrescale.dat', np.c_[data[ref[np.delete(np.arange(2), 1 - ind)[0]]], np.sqrt(self.rescale / np.asarray(data[ref[np.delete(np.arange(2), 1 - ind)[0]]]))], fmt='%.5f', delimiter=' ')
+            d[labels[np.delete(np.arange(2), 1 - ind)[0]]] = 'log(d), kpc'
+
+        d['z'] = data['z']
+        print(d)
+        return d
+
+    def changeUV(self, s):
+        d = self.rescaleUV(s)
+        print(d)
+        self.parent.plot_reg.set_data(x=d['x'], y=d['y'], z=d['z'])
+        self.parent.plot_reg.setLabels(bottom=d['bottom'], left=d['left'])
+            #self.parent.plot_reg.getAxis('left').setScale(10)
+
+
+class H2viewer(QMainWindow):
     def __init__(self):
         super().__init__()
         #self.H2 = H2_exc(folder='data_z0.3')
-        self.H2 = H2_exc(folder='data_01_temp2', H2database='all')
+        self.H2 = H2_exc('data_J0015/press', H2database='secret')
         self.H2.readfolder()
         self.initStyles()
         self.initUI()

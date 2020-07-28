@@ -9,6 +9,7 @@ from pyqtgraph.Qt import QtCore, QtGui
 from scipy import integrate
 import sys
 sys.path.append('/home/toksovogo/science/codes/python')
+sys.path.append('/media/serj/OS/science/python')
 sys.path.append('/science/python')
 from spectro.a_unc import a
 from spectro.sviewer.utils import Timer
@@ -36,17 +37,20 @@ spcode = {'H': 'n_h', 'H2': 'n_h2', 'H+': 'n_hp', 'H-': 'n_hm', 'H2+': 'n_h2p', 
           'H2j0': 'pop_h2_v0_j0', 'H2j1': 'pop_h2_v0_j1', 'H2j2': 'pop_h2_v0_j2', 'H2j3': 'pop_h2_v0_j3',
           'H2j4': 'pop_h2_v0_j4', 'H2j5': 'pop_h2_v0_j5', 'H2j6': 'pop_h2_v0_j6', 'H2j7': 'pop_h2_v0_j7',
           'H2j8': 'pop_h2_v0_j8', 'H2j9': 'pop_h2_v0_j9', 'H2j10': 'pop_h2_v0_j10',
-          'He': 'n_he', 'He+': 'n_hep',
+          'He': 'n_he', 'He+': 'n_hep', 'HeH+': 'n_hehp',
           'D': 'n_d', 'D+': 'n_dp', 'HD': 'n_hd', 'HDj0': 'pop_hd_v0_j0', 'HDj1': 'pop_hd_v0_j1', 'HDj2': 'pop_hd_v0_j2',
           'C': 'n_c', 'C+': 'n_cp', 'CO': 'n_co', 'CN': 'n_cn',
-          'O': 'n_o', 'O+': 'n_op', 'OH': 'n_oh',
+          'O': 'n_o', 'O+': 'n_op', 'OH+': 'n_ohp', 'H2O+': 'n_h2op', 'H3O+': 'n_h3op', 'OH': 'n_oh', 'H2O': 'n_h2o',
           'CIj0': 'pop_c_el3p_j0', 'CIj1': 'pop_c_el3p_j1', 'CIj2': 'pop_c_el3p_j2',
+          'SiI': 'n_si', 'SiII': 'n_sip', 'SiIII': 'n_sipp', 'SiIIj0': 'pop_sip_el2p_j1_2', 'SiIIj1': 'pop_sip_el2p_j3_2', 'NSiII': 'cd_prof_sip',
+          'Ar+': 'n_arp', 'ArH+': 'n_arhp',
           'NH': 'cd_prof_h', 'NH2': 'cd_prof_h2',  'NHD': 'cd_prof_hd', 'NOH': 'cd_prof_oh', 'NCO': 'cd_prof_co', 'NCN': 'cd_prof_cn',
           'NH2j0': 'cd_lev_prof_h2_v0_j0', 'NH2j1': 'cd_lev_prof_h2_v0_j1', 'NH2j2': 'cd_lev_prof_h2_v0_j2', 'NH2j3': 'cd_lev_prof_h2_v0_j3', 'NH2j4': 'cd_lev_prof_h2_v0_j4', 'NH2j5': 'cd_lev_prof_h2_v0_j5',
           'NH2j6': 'cd_lev_prof_h2_v0_j6', 'NH2j7': 'cd_lev_prof_h2_v0_j7', 'NH2j8': 'cd_lev_prof_h2_v0_j8', 'NH2j9': 'cd_lev_prof_h2_v0_j9', 'NH2j10': 'cd_lev_prof_h2_v0_j10', 'NH2j11': 'cd_lev_prof_h2_v0_j11',
           'H2_dest_rate': 'h2_dest_rate_ph', 'H2_form_rate_er': 'h2_form_rate_er','H2_form_rate_lh': 'h2_form_rate_lh','H2_photo_dest_prob': 'photo_prob___h2_photon_gives_h_h',
           'cool_tot': 'coolrate_tot', 'cool_cp': 'coolrate_cp', 'heat_tot': 'heatrate_tot', 'heat_phel': 'heatrate_pe',
           'H2_diss': 'h2_dest_rate_ph',
+          'Av': 'av',
          }
 
 class plot(pg.PlotWidget):
@@ -127,7 +131,7 @@ class model():
         self.pardict['tgas'] = ('Local quantities/Gas state', 2, float)
         self.pardict['pgas'] = ('Local quantities/Gas state', 3, float)
         self.pardict['ntot'] = ('Local quantities/Gas state', 1, float)
-        for n, ind in zip(['n_h', 'n_h2', 'n_c', 'n_cp', 'n_co'], [0, 2, 5, 93, 44]):
+        for n, ind in zip(['n_h', 'n_h2', 'n_c', 'n_cp', 'n_co'], [0, 1, 3, 64, 30]):
             self.pardict[n] = ('Local quantities/Densities/Densities', ind, float)
         for i in range(11):
             self.pardict['pop_h2_v0_j'+str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 9+i, float)
@@ -267,21 +271,25 @@ class model():
         if output:
             f.close()
 
-    def plot_model(self, parx='x', pars=['tgas', 'n', 'av'], species=None, logx=True, logy=True, ax=None, legend=True, limit=None):
+    def plot_model(self, parx='x', pars=['tgas', 'n', 'av'], species=None, logx=True, logy=True, fig=None, legend=True,
+                   limit=None, relative_abund=None, ls='-', lw=2):
         """
         Plot the model quantities
 
         :parameters:
-            -  pars          :  list of the parameters to plot
-            -  species       :  list of the lists of species to plot,
-                                    e.g. [['H', 'H+', 'H2'], ['NH2j0', 'NH2j1', 'NH2j2']]
-                                    each list will be plotted in independently
-            -  logx          :  if True x in log10
-            -  ax            :  axes object to plot
-            -  legend        :  show Legend
-            -  parx          :  what is on x axis
-            -  limit         :  if not None plot only part of the cloud specified by limit
-                                e.g. {'NH2': 19.5}
+            -  pars            :  list of the parameters to plot
+            -  species         :  list of the lists of species to plot,
+                                      e.g. [['H', 'H+', 'H2'], ['NH2j0', 'NH2j1', 'NH2j2']]
+                                      each list will be plotted in independently
+            -  logx            :  if True x in log10
+            -  fig             :  fig object to plot
+            -  legend          :  show Legend
+            -  parx            :  what is on x axis
+            -  limit           :  if not None plot only part of the cloud specified by limit
+                                  e.g. {'NH2': 19.5}
+            -  relative_abund  :  if True then plot relative abundances
+            -  ls              :  line styles
+            -  lw              :  line widths
 
         :return: fig
             -  fig            :  figure object
@@ -293,13 +301,35 @@ class model():
                 species = [species]
             n += len(species)
 
-        fig, ax = plt.subplots(nrows=1, ncols=n, figsize=(2 + 4*n, 8))
+        if fig is None:
+            new_fig = True
+            fig = plt.figure(figsize=(2 + 4*n, 8))
+        else:
+            new_fig = False
 
-        self.plot_phys_cond(pars=pars, logx=logx, ax=ax[0], legend=legend, parx=parx, limit=limit)
+        l = 0
+        if len(pars) > 0:
+            if new_fig:
+                ax = fig.add_axes([l + 0.04, 0.08, (1 - l) / (n + 1), 0.92])
+                l = l + 1.3 * (1 - l) / (n + 1)
+            else:
+                ax = fig.axes[l]
+                l += 2
+            self.plot_phys_cond(pars=pars, logx=logx, ax=ax, legend=legend, parx=parx, limit=limit)
 
         if species is not None:
-            for n, sp in enumerate(species):
-                self.plot_profiles(species=sp, logx=logx, logy=logy, ax=ax[n+1], legend=legend, parx=parx, limit=limit)
+            if new_fig:
+                l += 0.03
+                width = (1 - l) / (n - np.sign(l))
+            for i, sp in enumerate(species):
+                if new_fig:
+                    ax = fig.add_axes([l+0.03, 0.08, width-0.03, 0.92])
+                    l += width
+                else:
+                    ax = fig.axes[l]
+                    l += 1
+                self.plot_profiles(species=sp, logx=logx, logy=logy, ax=ax, legend=legend, ylabel=False, parx=parx,
+                                   limit=limit, relative_abund=relative_abund, ls=ls, lw=lw)
 
         fig.tight_layout()
 
@@ -391,7 +421,8 @@ class model():
 
         return ax
 
-    def plot_profiles(self, species=None, parx='av', logx=False, logy=False, ax=None, label=None, ylabel=True, legend=True, ls='-', lw=1, limit=None):
+    def plot_profiles(self, species=None, parx='av', logx=False, logy=False, ax=None, label=None, ylabel=True,
+                      legend=True, ls='-', lw=1, limit=None, relative_abund=None):
         """
         Plot the profiles of the species
 
@@ -458,22 +489,36 @@ class model():
 
         for s in species:
             print(s)
+            #print(self.sp)
             if '/' in s:
                 s1, s2 = s.split('/')[:]
-                y = self.sp[s1][mask] / self.sp[s2][mask]
+                y = self.sp[s1][mask]
+                d = self.sp[s2][mask]
             else:
                 y = self.sp[s][mask]
+                d = np.ones_like(y)
+
+            if relative_abund is not None:
+                d = getattr(self, relative_abund)
+
             if label is None:
                 lab = s
+
             if logy:
-                ax.plot(x, np.log10(y), ls=ls, label=lab, lw=lw, linewidth=2.0)
-            else:
-                ax.plot(x, y, ls=ls, label=lab, lw=lw, linewidth=2.0)
+                y = np.log10(y/d)
+
+            p = ax.plot(x, y, ls=ls, label=lab, lw=lw)
+
+            if isinstance(legend, int):
+                ax.text(x[legend], y[legend], s,  va='bottom', ha='left', color=p[0].get_color())
 
         if ylabel:
-            ax.set_ylabel(species[0], fontsize=20)
+            if relative_abund is None:
+                ax.set_ylabel(r'number density, cm$^{-3}$', fontsize=20)
+            else:
+                ax.set_ylabel(r'$n_{i}/$'+relative_abund, fontsize=20)
 
-        if legend:
+        if legend is True:
             ax.legend()
 
         return ax
@@ -516,6 +561,7 @@ class model():
 
         :return: None
         """
+        print(list(logN.keys())[0], self.sp[list(logN.keys())[0]])
         cols = np.insert(np.log10(integrate.cumtrapz(self.sp[list(logN.keys())[0]], x=self.x)), 0, 0)
 
         l = int(len(self.x) / sides) + 1 if sides > 1 else len(self.x)
@@ -560,6 +606,7 @@ class H2_exc():
                         'NH', 'NH2', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NH2j6', 'NH2j7', 'NH2j8', 'NH2j9', 'NH2j10',
                         'HD', 'HDj0', 'HDj1',
                         'C', 'C+', 'CO', 'CIj0', 'CIj1', 'CIj2', 'NCO',
+                        'SiII', 'SiIIj0', 'SiIIj1',
                         'O', 'O+', 'OH', 'NOH',
                         'H2_dest_rate', 'H2_form_rate_er', 'H2_form_rate_lh', 'H2_photo_dest_prob']
         self.readH2database(H2database)
@@ -574,6 +621,8 @@ class H2_exc():
             self.H2.append(H2_summary.load_QSO())
         if data in ['all', 'P94']:
             self.H2.append(H2_summary.load_P94())
+        if data in ['secret']:
+            self.H2.append(H2_summary.load_secret())
 
     def readmodel(self, filename=None, show_summary=False, folder=None):
         """
@@ -621,7 +670,6 @@ class H2_exc():
         self.grid = {p: [] for p in pars}
         self.mask = []
 
-        print(self.models)
         for name, model in self.models.items():
             for k, v in fixed.items():
                 if getattr(model, k) != v and v != 'all':
@@ -697,7 +745,7 @@ class H2_exc():
 
         return models
 
-    def compare(self, object='', species='H2', models='current', syst=0.0, levels=[], others='ignore'):
+    def compare(self, object='', species='H2', models='current', syst=0.0, syst_factor=1, levels=[], others='ignore', sides=2):
         """
         Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
         and also log of likelihood
@@ -708,7 +756,10 @@ class H2_exc():
             -  species           :  which species to use. Can be 'H2' or 'CI'
             -  models            :  names of the models, can be list or string
             -  syst              :  add systematic uncertainty to the calculation of the likelihood
+            -  syst_factor       :  multiply each uncertainty by this factor
             -  levels            :  levels that used to constraint, if empty list used all avaliable
+            -  others            :  what to do with other levels (can be 'ignore', 'upper', 'lower')
+            -  sides             :  how many sides are illuminated, can be 1 and 2 (for both sides)
 
         :return: None
             column densities are stored in the dictionary <cols> attribute for each model
@@ -720,11 +771,14 @@ class H2_exc():
             if len(levels) > 0:
                 full_keys = [s for s in q.e.keys() if ('H2j' in s) and ('v' not in s)]
                 keys = ['H2j{:}'.format(i) for i in levels if 'H2j{:}'.format(i) in full_keys]
-                spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in keys])
+                spec = OrderedDict([(s, a(q.e[s].col.log().val, q.e[s].col.log().plus * syst_factor, q.e[s].col.log().minus * syst_factor, 'l') * a(0.0, syst, syst)) for s in keys])
                 if others in ['lower', 'upper']:
                     for k in full_keys:
                         if k not in keys:
-                            v = q.e[k].col * a(0.0, syst, syst)
+                            v = a(q.e[k].col.val, q.e[k].col.plus * syst_factor, q.e[k].col.minus * syst_factor)
+                            print(q.e[k].col, v)
+                            if syst > 0:
+                                v = v * a(0.0, syst, syst)
                             if others == 'lower':
                                 spec[k] = a(v.val - v.minus, t=others[0])
                             else:
@@ -739,20 +793,21 @@ class H2_exc():
             spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
 
         for model in self.listofmodels(models):
-            model.calc_cols(spec.keys(), logN={'H2': q.e['H2'].col.val})
+            model.calc_cols(spec.keys(), logN={'H2': q.e['H2'].col.val}, sides=sides)
             relative = 'CIj0' if species == 'CI' else None
             #relative = None
             #model.lnLike(OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in keys]), relative=relative)
             model.lnLike(spec, relative=relative)
 
-    def comparegrid(self, object='0643', species='H2', pars=[], fixed={}, syst=0.0, plot=True, show_best=True, levels='all', others='ignore'):
+    def comparegrid(self, object='0643', species='H2', pars=[], fixed={}, syst=0.0, syst_factor=1.0, plot=True, show_best=True, levels='all', others='ignore', sides=2):
+        print('comparegrid', syst, syst_factor)
         self.setgrid(pars=pars, fixed=fixed, show=False)
         self.grid['NH2tot'] = self.comp(object).e['H2'].col.val
-        print(others)
-        self.compare(object, species=species, models=self.mask, syst=syst, levels=levels, others=others)
+        #print(others)
+        self.compare(object, species=species, models=self.mask, syst=syst, syst_factor=syst_factor, levels=levels, others=others, sides=sides)
         self.grid['lnL'] = np.asarray([self.models[m].lnL for m in self.mask])
         self.grid['cols'] = np.asarray([self.models[m].cols for m in self.mask])
-        print(self.grid)
+        #print(self.grid)
 
         if plot:
             if len(pars) == 1:
@@ -822,7 +877,7 @@ class H2_exc():
 
         return ax
 
-    def plot_models(self, ax=None, models='current', logN=None, species='<7', legend=False):
+    def plot_models(self, ax=None, models='current', logN=None, species='<7', legend=False, sides=2):
         """
         Plot excitation for specified models
 
@@ -844,7 +899,7 @@ class H2_exc():
 
         if logN is not None:
             for m in self.listofmodels(models):
-                m.calc_cols(species, logN={'H2': logN})
+                m.calc_cols(species, logN={'H2': logN}, sides=sides)
 
         for ind, m in enumerate(self.listofmodels(models)):
             j = np.sort([int(s[3:]) for s in m.cols.keys()])
@@ -971,18 +1026,27 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
 
     if 1:
-        m = model(folder='data_rough/', filename='h2uv_uv1e0_av0_5_z0_n1e2_s_25.hdf5', show_meta=True,
-                  species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'D', 'CIj0', 'CIj1', 'CIj2', 'C+', 'NH2', 'NHD', 'H2_diss'])
-        m.plot_model(parx='x', pars=['tgas', 'n'], species=[['H', 'H+', 'H2', 'HD', 'D'], ['NH2', 'NHD']], logx=True, logy=True)
+        m = model(folder='data_J0015/', filename='AGN_n4_48_UV2_48_s_10.hdf5', show_meta=True,
+                  species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'D', 'CIj0', 'CIj1', 'CIj2', 'SiI', 'SiII', 'SiIII', 'SiIIj0', 'SiIIj1', 'C+', 'NH2', 'NHD', 'NSiII', 'H2_diss', 'Av'])
+
+        #m.plot_model(parx='x', pars=['tgas', 'n'], species=[['H', 'H+', 'H2', 'Av'], ['SiI', 'SiII', 'SiIII', 'SiIIj0', 'SiIIj1']], logx=True, logy=True)
 
         fig, ax = plt.subplots()
+        if 1:
+            l = m.par('wavelength')
+            init = m.par('spec_int_tot')
+            uv = m.par('uv_flux')
+            print(len(l), len(uv))
+            ax.plot(np.log10(l), np.log10(init))
         if 0:
-            m.calc_cols(species=['CIj0', 'CIj1', 'CIj2'])
-            ax.plot(np.log10(m.x[1:]), np.log10(m.cols['CIj1'] / m.cols['CIj0']), '-k')
-        else:
-            m.calc_cols(species=['CIj0', 'CIj1', 'CIj2'], logN={'H2': 19.5})
-            #print(m.cols['CIj0'], m.cols['CIj1'], m.cols['CIj2'])
-            ax.plot(np.log10(m.h2), np.log10(m.sp['H2_diss'] / m.sp['H2']))
+            m.calc_cols(species=['SiIIj0', 'SiIIj1'])
+            #ax.plot(np.log10(m.x[1:]), m.cols['SiIIj0'] - m.cols['SiIIj0'], '-k')
+            ax.plot(np.log10(m.x[1:]), m.cols['SiIIj0'], '-k')
+            ax.plot(np.log10(m.x[1:]), m.cols['SiIIj1'], '-r')
+        if 0:
+            ax.plot(np.log10(m.sp['NSiII']), np.log10(m.sp['SiIIj1'] / m.sp['SiIIj0']))
+            ax.set_xlabel('logN(SiII)')
+            ax.set_ylabel('log N(SiIIj1) / N(SiIIj0)')
 
         #m.plot_phys_cond(pars=['tgas', 'n', 'N_H2'])
         #m.plot_profiles(species=['H2', 'HD', 'Cj0', 'Cj1', 'Cj2'], logx=True, logy=True, parx='x')

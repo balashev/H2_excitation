@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 22 13:36:40 2016
-
 @author: Serj
 """
 import sys, os
