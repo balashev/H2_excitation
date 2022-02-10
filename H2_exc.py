@@ -574,14 +574,14 @@ class model():
                 cols[s] = np.log10(integrate.cumtrapz(self.sp[s], x=self.x))
         else:
             if logN is not None:
-                if logN[list(logN.keys())[0]] is not None:
+                if sides != 0:
                     #logN[list(logN.keys())[0]] -= np.log10(sides)
                     self.set_mask(species=list(logN.keys())[0], logN=logN[list(logN.keys())[0]] - np.log10(sides), sides=sides)
                 else:
                     self.set_mask(species=list(logN.keys())[0], logN=logN[list(logN.keys())[0]])
 
             for s in species:
-                cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10(sides)
+                cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10((sides > 1) + 1)
 
         self.cols = cols
 
@@ -599,7 +599,7 @@ class model():
         cols = np.log10(self.sp['N' + species])
         #print(cols)
 
-        if logN is not None:
+        if logN is not None and sides != 0:
             l = int(len(self.x) / sides) + 1 if sides > 1 else len(self.x)
             if logN > cols[l - 1]:
                 logN = cols[l - 1]
@@ -785,7 +785,7 @@ class H2_exc():
 
         return models
 
-    def compare(self, object='', species='', models='current', syst=0.0, syst_factor=1, levels=[], others='ignore', sides=2):
+    def compare(self, object='', species='', models='current', syst=0.0, syst_factor=1, levels=[], others='ignore', relative=False, sides=2):
         """
         Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
         and also log of likelihood
@@ -824,17 +824,17 @@ class H2_exc():
                             else:
                                 spec[k] = a(v.val + v.plus, t=others[0])
             logN = {'H2': q.e['H2'].col.val}
-            print(spec)
-            print(q.e['H2'].col.val)
+            relative = 'H2j0' if relative else None
 
         elif species == 'CI':
             print('compare CI ', object)
             if len(levels) > 0:
                 full_keys = [s for s in q.e.keys() if ('CIj' in s) and ('v' not in s)]
-                keys = ['CIj{:}'.format(i) for i in list(set(levels) & set([0, 1, 2]))  if 'CIj{:}'.format(i) in full_keys]
+                keys = ['CIj{:}'.format(i) for i in list(set(levels) & set([0, 1, 2])) if 'CIj{:}'.format(i) in full_keys]
                 print(keys)
             spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
             logN = {'H2': q.e['H2'].col.val}
+            relative = 'CIj0' if relative else None
 
         elif species == 'CO':
             print('compare CO', object)
@@ -842,29 +842,31 @@ class H2_exc():
                 full_keys = [s for s in q.e.keys() if ('COj' in s) and ('v' not in s)]
                 keys = ['COj{:}'.format(i) for i in levels if 'COj{:}'.format(i) in full_keys]
                 print(keys)
-            logN = {'H2': None}
+            logN = {'CO': q.e['CO'].col.val}
+            relative = 'COj0' if relative else None
             #logN = {'CO': q.e['CO'].col.val}
 
         else:
             keys, full_keys, logN = [], [], None
 
+        print(logN, sides, relative)
+
         spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
 
         for model in self.listofmodels(models):
             model.calc_cols(spec.keys(), logN=logN, sides=sides)
-            relative = 'CIj0' if species == 'CI' else None
             #relative = 'COj0' if species == 'CO' else None
             #relative = None
             #model.lnLike(OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in keys]), relative=relative)
             model.lnLike(spec, relative=relative)
 
-    def comparegrid(self, object='', species='', pars=[], fixed={}, syst=0.0, syst_factor=1.0, plot=True, show_best=True, levels='all', others='ignore', sides=2):
+    def comparegrid(self, object='', species='', pars=[], fixed={}, syst=0.0, syst_factor=1.0, plot=True, show_best=True, levels='all', others='ignore', relative=False, sides=2):
         print('comparegrid', syst, syst_factor, pars, fixed)
         self.setgrid(pars=pars, fixed=fixed, show=False)
         if object != '':
             self.grid['NH2tot'] = self.comp(object).e['H2'].col.val
         #print(others)
-        self.compare(object, species=species, models=self.mask, syst=syst, syst_factor=syst_factor, levels=levels, others=others, sides=sides)
+        self.compare(object, species=species, models=self.mask, syst=syst, syst_factor=syst_factor, levels=levels, others=others, relative=relative, sides=sides)
         self.grid['lnL'] = np.asarray([self.models[m].lnL for m in self.mask])
         self.grid['cols'] = np.asarray([self.models[m].cols for m in self.mask])
         self.grid['dims'] = len(pars)

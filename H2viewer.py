@@ -219,7 +219,10 @@ class textLabel(pg.TextItem):
     def plot_model(self, limit=None):
         m = self.parent.parent.H2.listofmodels(self.name)[0]
         if self.parent.parent.H2.grid['NH2tot'] is not None:
-            limit = {'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / (int(self.parent.parent.grid_pars.sides.isChecked()) + 1)}
+            if self.parent.parent.grid_pars.sides.currentIndex() > 0:
+                limit = {'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / (int(self.parent.parent.grid_pars.sides.currentIndex()))}
+            else:
+                limit = None
         if self.parent.parent.grid_pars.plot_model_set.currentText() == 'H2+CI':
             m.plot_model(parx='x', pars=['tgas', 'n', 'av'],
                          species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2']],
@@ -235,7 +238,6 @@ class textLabel(pg.TextItem):
             m.plot_model(parx='co', pars=['tgas', 'n', 'av'],
                          species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2', 'CO'], ['COj1/COj0', 'COj2/COj0', 'COj3/COj0', 'COj4/COj0', 'COj5/COj0', 'COj6/COj0']],
                          logx=True, logy=True, limit=limit,
-                         #limit={'NH2': 10 ** self.parent.parent.H2.grid['NH2tot'] / (int(self.parent.parent.grid_pars.sides.isChecked()) + 1)}
                          )
         plt.show()
 
@@ -425,7 +427,8 @@ class QSOlistTable(pg.TableWidget):
         self.parent.parent.H2.comparegrid(name, species=species, pars=pars, fixed=fixed, syst=syst, syst_factor=syst_factor, plot=False,
                                           levels=self.parent.parent.grid_pars.H2levels,
                                           others=self.parent.parent.grid_pars.othermode.currentText(),
-                                          sides=int(self.parent.parent.grid_pars.sides.isChecked())+1)
+                                          relative=self.parent.parent.grid_pars.relative.isChecked(),
+                                          sides=int(self.parent.parent.grid_pars.sides.currentIndex()))
         grid = self.parent.parent.H2.grid
         self.parent.parent.H2.grid['name'] = name
         self.parent.parent.H2.grid['ndims'] = len(pars)
@@ -606,9 +609,12 @@ class gridParsWidget(QWidget):
         self.multSyst.setText('')
         self.multSyst.setFixedSize(40, 30)
         l.addWidget(self.multSyst)
-        self.sides = QCheckBox('both sides')
+        l.addWidget(QLabel('  geom:'))
+        self.sides = QComboBox()
+        self.sides.addItems(['total', 'one side', 'both sides'])
+        self.sides.setCurrentIndex(2)
         self.sides.setFixedSize(90, 30)
-        self.sides.setChecked(True)
+
         l.addWidget(self.sides)
         l.addStretch(1)
         layout.addLayout(l)
@@ -634,6 +640,9 @@ class gridParsWidget(QWidget):
         self.othermode.addItems(['ignore', 'lower', 'upper'])
         self.othermode.setCurrentIndex(0)
         l.addWidget(self.othermode)
+        self.relative = QCheckBox('relative')
+        self.relative.setChecked(False)
+        l.addWidget(self.relative)
         l.addStretch(1)
         layout.addLayout(l)
 
