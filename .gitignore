@@ -19,6 +19,7 @@
 *.rar
 *.tar
 *.zip
+*.hdf5
 
 # Logs and databases #
 ######################
@@ -40,4 +41,5 @@ Thumbs.db
 *.pyc
 **/__pychache__
 .idea/
-/data/*
+/data*
+/result/*

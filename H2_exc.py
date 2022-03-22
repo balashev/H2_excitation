@@ -574,11 +574,7 @@ class model():
                 cols[s] = np.log10(integrate.cumtrapz(self.sp[s], x=self.x))
         else:
             if logN is not None:
-                if sides != 0:
-                    #logN[list(logN.keys())[0]] -= np.log10(sides)
-                    self.set_mask(species=list(logN.keys())[0], logN=logN[list(logN.keys())[0]] - np.log10(sides), sides=sides)
-                else:
-                    self.set_mask(species=list(logN.keys())[0], logN=logN[list(logN.keys())[0]])
+                self.set_mask(species=list(logN.keys())[0], logN=logN[list(logN.keys())[0]] - np.log10((sides > 1) + 1), sides=sides)
 
             for s in species:
                 cols[s] = np.log10(np.trapz(self.sp[s][self.mask], x=self.x[self.mask])) + np.log10((sides > 1) + 1)
