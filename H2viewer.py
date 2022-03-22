@@ -13,7 +13,8 @@ from PyQt5.QtCore import (Qt, )
 from PyQt5.QtGui import (QFont, )
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QMainWindow, QSplitter, QWidget, QLabel,
                              QVBoxLayout, QHBoxLayout, QPushButton, QHeaderView, QCheckBox,
-                             QRadioButton, QButtonGroup, QComboBox, QTableView, QLineEdit)
+                             QRadioButton, QButtonGroup, QComboBox, QTableView, QLineEdit,
+                             QFileDialog,)
 import pyqtgraph as pg
 from scipy.interpolate import interp1d, interp2d, RectBivariateSpline, Rbf, RBFInterpolator
 from scipy.optimize import bisect
@@ -495,26 +496,7 @@ class chooseH2SystemWidget(QWidget):
         layout = QVBoxLayout()
 
         self.table = QSOlistTable(self)
-        data = self.parent.H2.H2.makelist(pars=['z_dla', 'Me__val', 'H2__val'], sys=self.parent.H2.H2.all(), view='numpy')
-        #data = self.H2.H2.list(pars=['name', 'H2', 'metallicity'])
-        self.table.setdata(data)
-        self.table.setSelectionBehavior(QTableView.SelectRows);
-        self.buttons = {}
-        for i, d in enumerate(data):
-            wdg = QWidget()
-            l = QVBoxLayout()
-            l.addSpacing(3)
-            button = QPushButton(d[0], self, checkable=True)
-            button.setFixedSize(100, 30)
-            button.setChecked(False)
-            button.clicked[bool].connect(partial(self.click, d[0]))
-            self.buttons[d[0]] = button
-            l.addWidget(button)
-            l.addSpacing(3)
-            l.setContentsMargins(0, 0, 0, 0)
-            wdg.setLayout(l)
-            self.table.setCellWidget(i, 0, wdg)
-
+        self.setData()
         layout.addWidget(self.table)
 
         self.scroll = None
@@ -532,6 +514,27 @@ class chooseH2SystemWidget(QWidget):
             layout.addLayout(hbox)
 
         self.setLayout(layout)
+
+    def setData(self):
+        data = self.parent.H2.H2.makelist(pars=['z_dla', 'Me__val', 'H2__val'], sys=self.parent.H2.H2.all(), view='numpy')
+        # data = self.H2.H2.list(pars=['name', 'H2', 'metallicity'])
+        self.table.setdata(data)
+        self.table.setSelectionBehavior(QTableView.SelectRows);
+        self.buttons = {}
+        for i, d in enumerate(data):
+            wdg = QWidget()
+            l = QVBoxLayout()
+            l.addSpacing(3)
+            button = QPushButton(d[0], self, checkable=True)
+            button.setFixedSize(100, 30)
+            button.setChecked(False)
+            button.clicked[bool].connect(partial(self.click, d[0]))
+            self.buttons[d[0]] = button
+            l.addWidget(button)
+            l.addSpacing(3)
+            l.setContentsMargins(0, 0, 0, 0)
+            wdg.setLayout(l)
+            self.table.setCellWidget(i, 0, wdg)
 
     def click(self, name):
         self.parent.plot_exc.add(name, self.buttons[name].isChecked())
@@ -562,6 +565,20 @@ class gridParsWidget(QWidget):
         self.cols, self.x_, self.y_, self.z_, self.lnL_ = None, None, None, None, None
 
         layout = QVBoxLayout(self)
+        l = QHBoxLayout(self)
+        dataFolder = QPushButton('Choose Folder')
+        dataFolder.setFixedSize(90, 30)
+        dataFolder.clicked[bool].connect(self.chooseFolder)
+        l.addWidget(dataFolder)
+        l.addWidget(QLabel('Sample:'))
+        self.dataSet = QComboBox(self)
+        self.dataSet.setFixedSize(90, 30)
+        self.dataSet.addItems(['QSO', 'secret', 'GRB', 'CO'])
+        self.dataSet.setCurrentIndex(0)
+        self.dataSet.currentIndexChanged[str].connect(self.chooseDataSet)
+        l.addWidget(self.dataSet)
+        l.addStretch(1)
+        layout.addLayout(l)
         layout.addWidget(QLabel('grid parameters:'))
 
         for n in self.pars.keys():
@@ -716,6 +733,18 @@ class gridParsWidget(QWidget):
         self.setLayout(layout)
 
         self.setStyleSheet(open('styles.ini').read())
+
+    def chooseFolder(self):
+        fname = QFileDialog.getExistingDirectory(self, 'Open folder', )
+        print(fname)
+
+        if fname:
+            self.parent.H2.folder = fname
+            self.parent.H2.readfolder()
+
+    def chooseDataSet(self):
+        self.parent.H2.readH2database(self.dataSet.currentText())
+        self.parent.H2_systems.setData()
 
     def setLevels(self):
         try:
@@ -1077,9 +1106,10 @@ class H2viewer(QMainWindow):
     def __init__(self):
         super().__init__()
         #self.H2 = H2_exc(folder='data_z0.3')
-        self.H2 = H2_exc(folder="data_av_full", H2database='CO')
+        self.H2 = H2_exc(folder="", H2database='CO')
         #self.H2 = H2_exc(folder='data_J0015/press', H2database='secret')
         #self.H2 = H2_exc(folder='data_z0.1', H2database='all')
+        self.H2.folder = "data_av"
         self.H2.readfolder()
         self.initStyles()
         self.initUI()

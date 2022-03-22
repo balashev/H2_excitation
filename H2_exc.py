@@ -629,7 +629,7 @@ class model():
         return self.lnL
 
 class H2_exc():
-    def __init__(self, folder='', H2database='all'):
+    def __init__(self, folder='', H2database='QSO'):
         self.folder = folder if folder.endswith('/') else folder + '/'
         self.models = {}
         self.species = ['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9', 'H2j10',
@@ -648,12 +648,14 @@ class H2_exc():
         import H2_summary
 
         self.H2 = H2_summary.load_empty()
-        if data == 'all':
+        if data == 'QSO':
             self.H2.append(H2_summary.load_QSO())
         if data in ['secret']:
             self.H2.append(H2_summary.load_secret())
         if data in ['CO']:
             self.H2.append(H2_summary.load_CO())
+        if data in ['GRB']:
+            self.H2.append(H2_summary.load_GRB())
 
     def readmodel(self, filename=None, show_summary=False, folder=None):
         """
@@ -677,6 +679,7 @@ class H2_exc():
         """
         Read list of models from the folder
         """
+        self.models = {}
         if 1:
             for (dirpath, dirname, filenames) in os.walk(self.folder):
                 print(dirpath, dirname, filenames)
@@ -1085,7 +1088,7 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
 
     if 1:
-        folder = 'data_av_full/'
+        folder = 'data_av/'
         filename = 'pdr_grid_av01_n1e1_uv3e0_s_20_s_20.hdf5'  # 'AGN_n4_00_UV3_00_s_10.hdf5'
         m = model(folder=folder, filename=filename, show_meta=True,
                   species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'D', 'CIj0', 'CIj1', 'CIj2', 'SiI',
