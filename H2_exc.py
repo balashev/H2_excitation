@@ -53,10 +53,12 @@ spcode = {'H': 'n_h', 'H2': 'n_h2', 'H+': 'n_hp', 'H-': 'n_hm', 'H2+': 'n_h2p', 
           'H2_diss': 'h2_dest_rate_ph',
           'Av': 'av',
          }
-H2dict = {f'H2j{i}': f'pop_h2_v0_j{i}' for i in range(12)}
-NH2dict = {f'NH2j{i}': f'cd_lev_prof_h2_v0_j{i}' for i in range(12)}
+H2dict = {f'H2j{i}': f'pop_h2_v0_j{i}' for i in range(13)}
+H2v1dict = {f'H2v1j{i}': f'pop_h2_v1_j{i}' for i in range(10)}
+NH2dict = {f'NH2j{i}': f'cd_lev_prof_h2_v0_j{i}' for i in range(13)}
+NH2v1dict = {f'NH2v1j{i}': f'cd_lev_prof_h2_v1_j{i}' for i in range(10)}
 COdict = {f'COj{i}': f'pop_co_v0_j{i}' for i in range(12)}
-spcode = {**spcode, **H2dict, **NH2dict, **COdict}
+spcode = {**spcode, **H2dict, **H2v1dict, **NH2dict, **NH2v1dict, **COdict}
 
 splatex = {'H': r'$\rm H$', 'H2': r'$\rm H_2$', 'H+': r'$\rm H^+$', 'H2+': r'$\rm H_2^+$', 'H3+': r'$\rm H_3^+$',
            'O': r'$\rm O$', 'O+': r'$\rm O^+$', 'OH': r'$\rm OH$', 'OH+': r'$\rm OH^+$', 'H2O': r'$\rm H_2O$', 'H2O+': r'$\rm H_2O^+$', 'H3O+': r'$\rm H_3O^+$',
@@ -146,8 +148,11 @@ class model():
         self.pardict['ntot'] = ('Local quantities/Gas state', 1, float)
         for n, ind in zip(['n_h', 'n_hp', 'n_h2', 'n_c', 'n_cp', 'n_co'], [0, 92, 2, 5, 100, 46]):
             self.pardict[n] = ('Local quantities/Densities/Densities', ind, float)
-        for i in range(11):
-            self.pardict[f'pop_h2_v0_j'+str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 9+i, float)
+        l = [[0, i, i + 9] for i in range(9)] + [[0, 9, 22], [0, 10, 25], [0, 11, 27]]
+        l += [[1, i, i + 18] for i in range(4)] + [[1, 4, 23], [1, 5, 24], [1, 6, 26], [1, 7, 28], [1, 8, 29]]
+        for i in l:
+            self.pardict[f'pop_h2_v{i[0]}_j{i[1]}'] = ('Local quantities/Auxiliary/Excitation/Level densities', i[2], float)
+
         for i in range(3):
             self.pardict[f'pop_c_el3p_j' + str(i)] = ('Local quantities/Auxiliary/Excitation/Level densities', 427 + i, float)
         for i in range(8):
@@ -600,6 +605,7 @@ class model():
             if logN > cols[l - 1]:
                 logN = cols[l - 1]
             self.mask = cols < logN
+            self.mask = cols < logN
         else:
             self.mask = cols > -1
         #return np.searchsorted(cols, value)
@@ -629,11 +635,12 @@ class model():
         return self.lnL
 
 class H2_exc():
-    def __init__(self, folder='', H2database='QSO'):
+    def __init__(self, folder=None, H2database='QSO'):
         self.folder = folder if folder.endswith('/') else folder + '/'
         self.models = {}
-        self.species = ['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9', 'H2j10',
-                        'NHI', 'NH2', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NH2j6', 'NH2j7', 'NH2j8', 'NH2j9', 'NH2j10',
+        self.species = ['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9', 'H2j10', 'H2j11',
+                        'H2v1j0', 'H2v1j1', 'H2v1j2', 'H2v1j3', 'H2v1j4', 'H2v1j5', 'H2v1j6', 'H2v1j7', 'H2v1j8',
+                        'NHI', 'NH2', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NH2j6', 'NH2j7', 'NH2j8', 'NH2j9', 'NH2j10', 'NH2j11',
                         'HD', 'HDj0', 'HDj1',
                         'C', 'C+', 'CO', 'CIj0', 'CIj1', 'CIj2', 'NCO',
                         'COj0', 'COj1', 'COj2', 'COj3', 'COj4', 'COj5', 'COj6',
@@ -641,21 +648,27 @@ class H2_exc():
                         'O', 'O+', 'OH', 'NOH',
                         'H2_dest_rate', 'H2_form_rate_er', 'H2_form_rate_lh', 'H2_photo_dest_prob']
         self.readH2database(H2database)
+        self.readfolder()
 
     def readH2database(self, data='all'):
         import sys
         sys.path.append('/home/toksovogo/science/codes/python/3.5/')
-        import H2_summary
+        sys.path.append('C:/science/Kosenko/fitting/Magellanic/')
+        import H2_summary_MC
 
-        self.H2 = H2_summary.load_empty()
+        self.H2 = H2_summary_MC.load_empty()
         if data == 'QSO':
             self.H2.append(H2_summary.load_QSO())
         if data in ['secret']:
             self.H2.append(H2_summary.load_secret())
+        if data in ['proximate']:
+            self.H2.append(H2_summary.load_proximate())
         if data in ['CO']:
             self.H2.append(H2_summary.load_CO())
         if data in ['GRB']:
             self.H2.append(H2_summary.load_GRB())
+        if data in ['Magellanic']:
+            self.H2.append(H2_summary_MC.load_SMC())
 
     def readmodel(self, filename=None, show_summary=False, folder=None):
         """
@@ -680,16 +693,16 @@ class H2_exc():
         Read list of models from the folder
         """
         self.models = {}
-        if 1:
+        if self.folder is not None:
             for (dirpath, dirname, filenames) in os.walk(self.folder):
                 print(dirpath, dirname, filenames)
                 for f in filenames:
                     if f.endswith('.hdf5'):
                         self.readmodel(filename=f, folder=dirpath + '/')
-        else:
-            for f in os.listdir(self.folder):
-                if f.endswith('.hdf5'):
-                    self.readmodel(f, show_summary=verbose)
+        #else:
+        #    for f in os.listdir(self.folder):
+        #        if f.endswith('.hdf5'):
+        #            self.readmodel(f, show_summary=verbose)
 
 
     def setgrid(self, pars=[], fixed={}, show=True):
@@ -784,7 +797,7 @@ class H2_exc():
 
         return models
 
-    def compare(self, object='', species='', models='current', syst=0.0, syst_factor=1, levels=[], others='ignore', relative=False, sides=2):
+    def compare(self, object='', species='', models='current', syst=0.0, syst_factor=1, levels='all', others='ignore', relative=False, sides=2):
         """
         Calculate the column densities of H2 rotational levels for the list of models given the total H2 column density.
         and also log of likelihood
@@ -805,11 +818,16 @@ class H2_exc():
             log of likelihood value is stored in <lnL> attribute
         """
 
+        print('levels:', levels)
         q = self.comp(object)
         if species == 'H2':
-            if len(levels) > 0:
-                full_keys = [s for s in q.e.keys() if ('H2j' in s) and ('v' not in s)]
-                keys = ['H2j{:}'.format(i) for i in levels if 'H2j{:}'.format(i) in full_keys]
+            full_keys = [s for s in q.e.keys() if ('H2' in s) and ('j' in s)]
+            if levels == 'all':
+                keys = full_keys[:]
+            elif len(levels.split()) > 0:
+                keys = ['H2j{:}'.format(i) for i in levels.split() if 'H2j{:}'.format(i) in full_keys]
+            print(keys)
+            if len(keys) > 0:
                 spec = OrderedDict([(s, a(q.e[s].col.log().val, q.e[s].col.log().plus * syst_factor, q.e[s].col.log().minus * syst_factor, 'l') * a(0.0, syst, syst)) for s in keys])
                 if others in ['lower', 'upper']:
                     for k in full_keys:
@@ -822,26 +840,38 @@ class H2_exc():
                                 spec[k] = a(v.val - v.minus, t=others[0])
                             else:
                                 spec[k] = a(v.val + v.plus, t=others[0])
+
             logN = {'H2': q.e['H2'].col.val}
             relative = 'H2j0' if relative else None
 
         elif species == 'CI':
             print('compare CI ', object)
-            if len(levels) > 0:
-                full_keys = [s for s in q.e.keys() if ('CIj' in s) and ('v' not in s)]
-                keys = ['CIj{:}'.format(i) for i in list(set(levels) & set([0, 1, 2])) if 'CIj{:}'.format(i) in full_keys]
-                print(keys)
-            spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
+            full_keys = [s for s in q.e.keys() if ('CIj' in s)]
+            if levels == 'all':
+                keys = full_keys[:]
+            elif len(levels.split()) > 0:
+                keys = ['CIj{:}'.format(i) for i in levels.split() if 'CIj{:}'.format(i) in full_keys]
+            print(keys)
+            if len(keys) > 0:
+                #full_keys = [s for s in q.e.keys() if ('CIj' in s)]
+                #keys = ['CIj{:}'.format(i) for i in list(set(levels) & set([0, 1, 2])) if 'CIj{:}'.format(i) in full_keys]
+
+                spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
             logN = {'H2': q.e['H2'].col.val}
             relative = 'CIj0' if relative else None
 
         elif species == 'CO':
             print('compare CO', object)
-            if len(levels) > 0:
-                full_keys = [s for s in q.e.keys() if ('COj' in s) and ('v' not in s)]
-                keys = ['COj{:}'.format(i) for i in levels if 'COj{:}'.format(i) in full_keys]
-                print(keys)
-            logN = {'CO': q.e['CO'].col.val}
+            full_keys = [s for s in q.e.keys() if ('COj' in s)]
+            if levels == 'all':
+                keys = full_keys[:]
+            elif len(levels.split()) > 0:
+                keys = ['COj{:}'.format(i) for i in levels.split() if 'CO{:}'.format(i) in full_keys]
+            print(keys)
+            if len(keys) > 0:
+                #full_keys = [s for s in q.e.keys() if ('COj' in s) and ('v' not in s)]
+                #keys = ['COj{:}'.format(i) for i in levels if 'COj{:}'.format(i) in full_keys]
+                logN = {'CO': q.e['CO'].col.val}
             relative = 'COj0' if relative else None
             #logN = {'CO': q.e['CO'].col.val}
 
@@ -850,7 +880,7 @@ class H2_exc():
 
         print(logN, sides, relative)
 
-        spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in full_keys])
+        spec = OrderedDict([(s, q.e[s].col * a(0.0, syst, syst)) for s in keys])
 
         for model in self.listofmodels(models):
             model.calc_cols(spec.keys(), logN=logN, sides=sides)
@@ -860,7 +890,7 @@ class H2_exc():
             model.lnLike(spec, relative=relative)
 
     def comparegrid(self, object='', species='', pars=[], fixed={}, syst=0.0, syst_factor=1.0, plot=True, show_best=True, levels='all', others='ignore', relative=False, sides=2):
-        print('comparegrid', syst, syst_factor, pars, fixed)
+        print('comparegrid', syst, syst_factor, pars, fixed, levels)
         self.setgrid(pars=pars, fixed=fixed, show=False)
         if object != '':
             self.grid['NH2tot'] = self.comp(object).e['H2'].col.val
@@ -869,7 +899,7 @@ class H2_exc():
         self.grid['lnL'] = np.asarray([self.models[m].lnL for m in self.mask])
         self.grid['cols'] = np.asarray([self.models[m].cols for m in self.mask])
         self.grid['dims'] = len(pars)
-        #print(self.grid)
+        print(self.grid)
 
         if plot:
             if len(pars) == 1:
@@ -1089,7 +1119,7 @@ if __name__ == '__main__':
 
     if 1:
         folder = 'data_av/'
-        filename = 'pdr_grid_av01_n1e1_uv3e0_s_20_s_20.hdf5'  # 'AGN_n4_00_UV3_00_s_10.hdf5'
+        filename = 'pdr_grid_av0_5_n1e2_uv0_1_s_20.hdf5'  # 'AGN_n4_00_UV3_00_s_10.hdf5'
         m = model(folder=folder, filename=filename, show_meta=True,
                   species=['H', 'H+', 'H2', 'H2j0', 'H2j1', 'HD', 'HDj0', 'HDj1', 'D', 'CIj0', 'CIj1', 'CIj2', 'SiI',
                            'SiII', 'SiIII', 'SiIIj0', 'SiIIj1', 'C+', 'NH2', 'NHD', 'NSiII', 'H2_diss', 'Av', 'NCOtot'])

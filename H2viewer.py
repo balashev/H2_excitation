@@ -8,6 +8,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator
 import numpy as np
+import os
 import pickle
 from PyQt5.QtCore import (Qt, )
 from PyQt5.QtGui import (QFont, )
@@ -102,24 +103,33 @@ class plotExc(pg.PlotWidget):
     def initstatus(self):
         pass
 
-    def getatomic(self, species, levels=[0, 1, 2]):
-        if species == 'H2':
-            return [H2energy[0, i] for i in levels], [stat_H2[i] for i in levels]
-        elif species == 'CI':
-            return [CIenergy[i] for i in levels], [stat_CI[i] for i in levels]
-        elif species == 'CO':
-            return [COenergy[i] for i in levels], [stat_CO[i] for i in levels]
+    def getatomic(self, sp):
+        if sp[0].startswith('H2'):
+            e, stat = [], []
+            for s in sp:
+                if 'v' in s:
+                    e.append(H2energy[int(s[s.index('v')+1:s.index('j')]), int(s[s.index('j')+1:])])
+                else:
+                    e.append(H2energy[0, int(s[s.index('j') + 1:])])
+                stat.append(stat_H2[int(s[s.index('j') + 1])])
+            inds = np.argsort(e)
+            return [sp[i] for i in np.argsort(e)], [e[i] for i in np.argsort(e)], [stat[i] for i in np.argsort(e)]
+        elif sp[0].startswith('CI'):
+            levels = [int(s[3:]) for s in sp]
+            return sp, [CIenergy[i] for i in levels], [stat_CI[i] for i in levels]
+        elif sp[0].startswith('CO'):
+            levels = [int(s[3:]) for s in sp]
+            return sp, [COenergy[i] for i in levels], [stat_CO[i] for i in levels]
 
     def add(self, name, add):
         if add:
             species = str(self.parent.grid_pars.species.currentText())
-            print(species)
             q = self.parent.H2.comp(name)
-            sp = [s for s in q.e.keys() if species+'j' in s]
-            j = np.sort([int(s[3:]) for s in sp if 'v' not in s])
-            x, stat = self.getatomic(species, levels=j)
-            y = [q.e[species+'j' + str(i)].col / stat[i] for i in j]
-            typ = [q.e[species+'j' + str(i)].col.type for i in j]
+            sp = [s for s in q.e.keys() if species in s and 'j' in s]
+            sp, x, stat = self.getatomic(sp)
+            print([[q.e[sp[i]].col.log(), stat[i]] for i in range(len(sp))])
+            y = [(q.e[sp[i]].col.dec() / stat[i]).log() for i in range(len(sp))]
+            typ = [q.e[sp[i]].col.type for i in range(len(sp))]
             self.view[name] = [pg.ErrorBarItem(x=np.asarray(x), y=column(y, 'v'), top=column(y, 'p'), bottom=column(y, 'm'), beam=2),
                                pg.ScatterPlotItem(x, column(y, 'v'), symbol='o', size=15)]
             self.vb.addItem(self.view[name][0])
@@ -139,9 +149,8 @@ class plotExc(pg.PlotWidget):
         if add:
             species = str(self.parent.grid_pars.species.currentText())
             for ind, m in enumerate(self.parent.H2.listofmodels(name)):
-                j = np.sort([int(s[3:]) for s in m.cols.keys()])
-                x, stat = self.getatomic(species, levels=j)
-                mod = [m.cols[species+'j'+str(i)] - np.log10(stat[i]) for i in j]
+                sp, x, stat = self.getatomic(list(m.cols.keys()))
+                mod = [m.cols[sp[i]] - np.log10(stat[i]) for i in range(len(sp))]
             self.models[name] = pg.PlotCurveItem(x, mod)
             self.vb.addItem(self.models[name])
             self.legend_model.addItem(self.models[name], name)
@@ -157,11 +166,11 @@ class plotExc(pg.PlotWidget):
     def add_temp(self, cols=None, pars=None, add=True):
         if add:
             species = str(self.parent.grid_pars.species.currentText())
-            j = np.sort([int(s[3:]) for s in cols.keys()])
-            x, stat = self.getatomic(species, levels=j)
-            mod = [cols[species+'j'+str(i)] - np.log10(stat[i]) for i in j]
+            #j = np.sort([int(s[3:]) for s in cols.keys()])
+            sp, x, stat = self.getatomic(list(cols.keys()))
+            mod = [cols[sp[i]] - np.log10(stat[i]) for i in range(len(sp))]
             if 1:
-                print([cols[species+'j'+str(i)] for i in j])
+                print([cols[sp[i]] for i in range(len(sp))])
                 grid = self.parent.H2.grid
                 species = {}
                 sp = grid['cols'][0].keys()
@@ -226,8 +235,8 @@ class textLabel(pg.TextItem):
                 limit = None
         if self.parent.parent.grid_pars.plot_model_set.currentText() == 'H2+CI':
             m.plot_model(parx='x', pars=['tgas', 'n', 'av'],
-                         species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2']],
-                                  #['NHI', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5']],
+                         species=[['H', 'H+', 'H2', 'H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'CIj0', 'CIj1', 'CIj2', 'CO'],
+                                  ['NHI', 'NH2j0', 'NH2j1', 'NH2j2', 'NH2j3', 'NH2j4', 'NH2j5', 'NCO']],
                          logx=True, logy=True, limit=limit)
         if self.parent.parent.grid_pars.plot_model_set.currentText() == 'OH':
             m.plot_model(parx='h2', pars=['tgas', 'n'],
@@ -374,7 +383,7 @@ class plotGrid(pg.PlotWidget):
         if not event.isAutoRepeat():
 
             if event.key() == Qt.Key_S:
-                self.s_status = True
+                self.s_status = False
                 self.parent.plot_exc.add_temp([], add=False)
 
 class QSOlistTable(pg.TableWidget):
@@ -397,9 +406,9 @@ class QSOlistTable(pg.TableWidget):
             for k, v in self.format.items():
                 self.setFormat(v, self.columnIndex(k))
         self.resizeColumnsToContents()
-        self.horizontalHeader().setResizeMode(QHeaderView.Stretch)
-        self.horizontalHeader().setResizeMode(0, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setResizeMode(1, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         w = 180 + self.verticalHeader().width() + self.autoScrollMargin()*1.5
         w += sum([self.columnWidth(c) for c in range(self.columnCount())])
         self.resize(w, self.size().height())
@@ -560,16 +569,17 @@ class gridParsWidget(QWidget):
         self.parent = parent
         #self.resize(700, 900)
         #self.move(400, 100)
-        self.pars = {'n0': 'x', 'P': 'disable', 'uv': 'y', 'Z': 'fixed', 'Av': 'disable', 'NCO': 'z'}
+        self.pars = {'n0': 'x', 'P': 'disable', 'uv': 'y', 'Z': 'fixed', 'Av': 'disable', 'NCO': 'disable'}
         self.parent.H2.setgrid(pars=list(self.pars.keys()), show=False)
         self.cols, self.x_, self.y_, self.z_, self.lnL_ = None, None, None, None, None
 
         layout = QVBoxLayout(self)
         l = QHBoxLayout(self)
-        dataFolder = QPushButton('Choose Folder')
-        dataFolder.setFixedSize(90, 30)
-        dataFolder.clicked[bool].connect(self.chooseFolder)
-        l.addWidget(dataFolder)
+        l.addWidget(QLabel('Meudon Folder:'))
+        self.dataFolder = QPushButton(self.parent.H2.folder)
+        self.dataFolder.setFixedSize(90, 30)
+        self.dataFolder.clicked[bool].connect(partial(self.chooseFolder, folder=None))
+        l.addWidget(self.dataFolder)
         l.addWidget(QLabel('Sample:'))
         self.dataSet = QComboBox(self)
         self.dataSet.setFixedSize(90, 30)
@@ -644,10 +654,10 @@ class gridParsWidget(QWidget):
         self.species = QComboBox(self)
         self.species.setFixedSize(50, 25)
         self.species.addItems(['H2', 'CI', 'CO'])
-        self.species.setCurrentIndex(2)
+        self.species.setCurrentIndex(0)
         l.addWidget(self.species)
-        self.H2levels = np.arange(6)
-        self.levels = QLineEdit(" ".join([str(i) for i in self.H2levels]))
+        self.H2levels = "all"
+        self.levels = QLineEdit(self.H2levels)
         self.levels.setFixedSize(90, 30)
         self.levels.editingFinished.connect(self.setLevels)
         l.addWidget(self.levels)
@@ -734,12 +744,14 @@ class gridParsWidget(QWidget):
 
         self.setStyleSheet(open('styles.ini').read())
 
-    def chooseFolder(self):
-        fname = QFileDialog.getExistingDirectory(self, 'Open folder', )
-        print(fname)
+    def chooseFolder(self, folder=None):
+        if folder is None:
+            folder = QFileDialog.getExistingDirectory(self, 'Open folder', )
+            print(folder)
 
-        if fname:
-            self.parent.H2.folder = fname
+        if folder:
+            self.dataFolder.setText(os.path.basename(os.path.normpath(folder)))
+            self.parent.H2.folder = folder
             self.parent.H2.readfolder()
 
     def chooseDataSet(self):
@@ -748,7 +760,7 @@ class gridParsWidget(QWidget):
 
     def setLevels(self):
         try:
-            self.H2levels = [int(s) for s in self.levels.text().split()]
+            self.H2levels = self.levels.text()
         except:
             pass
 
@@ -810,7 +822,8 @@ class gridParsWidget(QWidget):
         syst_factor = float(self.multSyst.text()) if self.multSyst.text().strip() != '' else 1
 
         sp = grid['cols'][0].keys()
-        sp = [s for s in sp if int(s[3:]) in self.H2levels]
+        if self.H2levels != 'all':
+            sp = [s for s in sp if s[3:] in self.H2levels.split()]
         species = {}
         for s in sp:
             self.parent.H2.comp(grid['name']).e[s].col.log()
@@ -832,6 +845,7 @@ class gridParsWidget(QWidget):
         num = int(self.numPlot.text())
         x, y = np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('x')]]), np.log10(grid[list(self.pars.keys())[list(self.pars.values()).index('y')]])
         x1, y1 = x[:], y[:] # copy for save
+        print(grid['ndims'])
         if grid['ndims'] == 2:
             x, y = np.linspace(float(self.xmin.text()), float(self.xmax.text()), num), np.linspace(float(self.ymin.text()), float(self.ymax.text()), num)
             X, Y = np.meshgrid(x, y)
@@ -882,6 +896,7 @@ class gridParsWidget(QWidget):
                     lnL[k, i] = L
             self.x_, self.y_, self.lnL_ = x, y, lnL
 
+        print(self.x_, self.y_, self.lnL_)
         if save:
             for s in cols.keys():
                 with open('temp/{:s}'.format(s), 'wb') as f:
@@ -927,16 +942,28 @@ class gridParsWidget(QWidget):
 
     def tableIt(self):
         print(self.parent.plot_reg.x, self.parent.plot_reg.y)
-        d = [['species', 'observed', 'model']]
+        latex = 0
+
+        if latex:
+            d = [['species', 'observed', 'model']]
+        else:
+            d = [['species', 'value', 'plus', 'minus', 'model']]
+
+        q = self.parent.H2.H2.getcomp(self.parent.H2.grid['name'])
+        spec = [k for k in q.e.keys() if k.startswith('H2') and 'j' in k]
+
         if self.parent.grid_pars.cols is not None:
             cols = {}
-            for s in self.parent.H2.grid['cols'][0].keys():
+            for s in spec:
                 cols[s] = self.parent.grid_pars.cols[s](self.parent.plot_reg.x, self.parent.plot_reg.y)
-                #print(self.mousePoint.x(), self.mousePoint.y(), s, cols[s])
-        q = self.parent.H2.H2.getcomp(self.parent.H2.grid['name'])
-        for e in ['H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7']:
+
+        for e in spec: #['H2j0', 'H2j1', 'H2j2', 'H2j3', 'H2j4', 'H2j5', 'H2j6', 'H2j7', 'H2j8', 'H2j9']:
             if e in q.e.keys():
-                d.append([e.replace('H2', 'H$_2$ ').replace('j', 'J='), q.e[e].col.latex(f=2), '{:5.2f}'.format(cols[e])])
+                q.e[e].col.log()
+                if latex:
+                    d.append([e.replace('H2', 'H$_2$ ').replace('j', 'J='), q.e[e].col.latex(f=2), '{:5.2f}'.format(cols[e])])
+                else:
+                    d.append(["{:7s}".format(e), '{:5.2f}'.format(q.e[e].col.val), '{:5.2f}'.format(q.e[e].col.plus), '{:5.2f}'.format(q.e[e].col.minus), '{:5.2f}'.format(cols[e])])
         if 0:
             pr = pyratio(z=q.z)
             n = [q.e['CIj0'].col, q.e['CIj1'].col, q.e['CIj2'].col]
@@ -952,7 +979,10 @@ class gridParsWidget(QWidget):
 
         print(d)
         output = StringIO()
-        ascii.write([list(i) for i in zip(*d[1:])], output, names=d[0], format='latex')
+        if latex:
+            ascii.write([list(i) for i in zip(*d[1:])], output, names=d[0], format='latex')
+        else:
+            ascii.write([list(i) for i in zip(*d[1:])], output, names=d[0])
         table = output.getvalue()
         print(table)
         output.close()
@@ -1106,11 +1136,9 @@ class H2viewer(QMainWindow):
     def __init__(self):
         super().__init__()
         #self.H2 = H2_exc(folder='data_z0.3')
-        self.H2 = H2_exc(folder="", H2database='CO')
-        #self.H2 = H2_exc(folder='data_J0015/press', H2database='secret')
+        #self.H2 = H2_exc(folder='data_av', H2database='secret')
+        self.H2 = H2_exc(folder='data_z_01', H2database='Magellanic')
         #self.H2 = H2_exc(folder='data_z0.1', H2database='all')
-        self.H2.folder = "data_av"
-        self.H2.readfolder()
         self.initStyles()
         self.initUI()
 
